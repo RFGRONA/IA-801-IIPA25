@@ -1,94 +1,78 @@
-# perceptron.py (Corregido y Mejorado)
+# perceptron.py (Versión 5.2 - Corrección de referencia de pesos)
 
 import random
+
+COMPUERTAS_LOGICAS = {
+    "OR": {"X": [[0, 0], [0, 1], [1, 0], [1, 1]], "Y": [0, 1, 1, 1]},
+    "AND": {"X": [[0, 0], [0, 1], [1, 0], [1, 1]], "Y": [0, 0, 0, 1]},
+    "XOR": {"X": [[0, 0], [0, 1], [1, 0], [1, 1]], "Y": [0, 1, 1, 0]},
+    "NOT_X2": {"X": [[0, 0], [0, 1], [1, 0], [1, 1]], "Y": [1, 0, 0, 1]}
+}
 
 class Perceptron:
     def __init__(self, tasa_aprendizaje=0.1, pesos_iniciales=None, num_entradas=2):
         self.tasa_aprendizaje = tasa_aprendizaje
         num_pesos = num_entradas + 1
-
-        if pesos_iniciales:
-            if len(pesos_iniciales) != num_pesos:
-                raise ValueError(f"Error: Se esperaban {num_pesos} pesos, pero se recibieron {len(pesos_iniciales)}.")
-            self.pesos = list(pesos_iniciales)
-        else:
-            self.pesos = [random.uniform(-1, 1) for _ in range(num_pesos)]
-        
-        print("--------------------------------------------------")
-        print(f"Perceptrón inicializado.")
-        print(f"Pesos iniciales: {[round(p, 4) for p in self.pesos]}")
-        print("--------------------------------------------------")
+        if pesos_iniciales: self.pesos = list(pesos_iniciales)
+        else: self.pesos = [random.uniform(-1, 1) for _ in range(num_pesos)]
+        print(f"Perceptrón inicializado con pesos: {[round(p, 4) for p in self.pesos]}")
 
     def predecir(self, entradas):
-        entradas_con_bias = [-1] + entradas 
+        entradas_con_bias = [1] + entradas
+        suma_ponderada = sum(p * e for p, e in zip(self.pesos, entradas_con_bias))
+        return 1 if suma_ponderada >= 0 else 0
 
-        suma_ponderada = 0.0
-        for i in range(len(self.pesos)):
-            suma_ponderada += self.pesos[i] * entradas_con_bias[i]
-            
+    def obtener_puntos_recta(self, x_min=-0.5, x_max=1.5):
+        w0, w1, w2 = self.pesos
+        if abs(w2) < 1e-6: return None
+        y1 = (-w1 * x_min - w0) / w2
+        y2 = (-w1 * x_max - w0) / w2
+        return [(x_min, y1), (x_max, y2)]
 
-        if suma_ponderada >= 0:
-            return 1
-        else:
-            return 0
-
-
-    def entrenar(self, X_entrenamiento, Y_entrenamiento, max_epocas=1000):
-        print("\nIniciando entrenamiento...")
-        historial_errores = []
-        historial_pesos = []
-        historial_salidas = []
-
-        for epoca in range(max_epocas):
-            # Primero, calcula los errores con los pesos actuales de la época
-            errores_calculados = [y_esperada - self.predecir(entradas) for entradas, y_esperada in zip(X_entrenamiento, Y_entrenamiento)]
-            errores_en_epoca = sum(error != 0 for error in errores_calculados)
-
-            # Guarda el estado de la red ANTES de cualquier actualización en esta época
-            historial_errores.append(errores_en_epoca)
-            historial_pesos.append(self.pesos.copy())
-            salidas_actuales = [self.predecir(entradas) for entradas in X_entrenamiento]
-            historial_salidas.append(salidas_actuales)
+    def entrenar(self, compuerta, callback=None):
+        X_entrenamiento = COMPUERTAS_LOGICAS[compuerta]["X"]
+        Y_entrenamiento = COMPUERTAS_LOGICAS[compuerta]["Y"]
+        print(f"\n--- Iniciando entrenamiento para la compuerta {compuerta} ---")
+        epoca = 0
+        while True:
+            errores_calculados = [y - self.predecir(x) for x, y in zip(X_entrenamiento, Y_entrenamiento)]
+            errores_en_epoca = sum(e != 0 for e in errores_calculados)
             
             print(f"> Época {epoca + 1}: Errores = {errores_en_epoca}, Pesos = {[round(p, 4) for p in self.pesos]}")
 
-            # Condición de parada: si no hay errores, termina ANTES de actualizar.
+            if callback:
+                # AQUÍ ESTÁ EL CAMBIO: Se pasa una copia de los pesos
+                continuar = callback(epoca=epoca + 1, pesos=self.pesos.copy(), errores_patron=errores_calculados)
+                if not continuar:
+                    print("\nEntrenamiento detenido por la interfaz.")
+                    break
+
             if errores_en_epoca == 0:
-                print("\nEntrenamiento completado exitosamente.")
+                print("\n¡Entrenamiento completado exitosamente!")
+                # Llama una última vez al callback para dibujar el estado final
+                if callback: callback(epoca=epoca + 1, pesos=self.pesos.copy(), errores_patron=errores_calculados)
                 break
-
-            # Si hay errores, actualiza los pesos para la SIGUIENTE época
-            for i, (entradas, y_esperada) in enumerate(zip(X_entrenamiento, Y_entrenamiento)):
-                error = errores_calculados[i]
-                if error != 0:
-                    self.pesos[0] += self.tasa_aprendizaje * error * -1
-                    for j in range(len(entradas)):
-                        self.pesos[j + 1] += self.tasa_aprendizaje * error * entradas[j]
-        else:
-            print("\nEntrenamiento finalizado por alcanzar el máximo de épocas.")
             
-        return self.pesos, historial_errores, historial_pesos, historial_salidas
+            for i, error in enumerate(errores_calculados):
+                if error != 0:
+                    entradas = X_entrenamiento[i]
+                    self.pesos[0] += self.tasa_aprendizaje * error * 1
+                    for j, entrada_val in enumerate(entradas):
+                        self.pesos[j + 1] += self.tasa_aprendizaje * error * entrada_val
+            epoca += 1
+        return self.pesos
 
-    def guardar_pesos(self, ruta_archivo="pesos_or.txt"):
+    def guardar_pesos(self, ruta_archivo="pesos.txt"):
         try:
             with open(ruta_archivo, 'w') as f:
-                for peso in self.pesos:
-                    f.write(str(peso) + '\n')
-            print(f"\nPesos guardados correctamente en '{ruta_archivo}'.")
+                for peso in self.pesos: f.write(str(peso) + '\n')
+            print(f"\nPesos guardados en '{ruta_archivo}'.")
             return True
-        except IOError as e:
-            print(f"Error al guardar los pesos: {e}")
-            return False
+        except IOError as e: print(f"Error al guardar: {e}"); return False
 
     @staticmethod
-    def cargar_pesos(ruta_archivo="pesos_or.txt"):
+    def cargar_pesos(ruta_archivo="pesos.txt"):
         try:
             with open(ruta_archivo, 'r') as f:
-                pesos = [float(line.strip()) for line in f]
-            print(f"\nPesos cargados correctamente desde '{ruta_archivo}'.")
-            return pesos
-        except FileNotFoundError:
-            return None # Silencioso para la GUI
-        except IOError as e:
-            print(f"Error al cargar los pesos: {e}")
-            return None
+                return [float(line.strip()) for line in f]
+        except Exception: return None
