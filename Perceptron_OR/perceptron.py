@@ -11,10 +11,10 @@ COMPUERTAS_LOGICAS = {
     "AND": {"X": [[0, 0], [0, 1], [1, 0], [1, 1]], "Y": [0, 0, 0, 1]},     # Linealmente separable
     "XOR": {"X": [[0, 0], [0, 1], [1, 0], [1, 1]], "Y": [0, 1, 1, 0]},     # NO es linealmente separable    
     "NOT_X2": {"X": [[0, 0], [0, 1], [1, 0], [1, 1]], "Y": [1, 0, 1, 0]},   # Linealmente separable
-    "Pruebas": {"X": [[0, 0], [0, 1], [1, 0], [1, 1]], "Y": [-1, 1, 1, 1]}  
+    # "Pruebas": {"X": [[0, 0], [0, 1], [1, 0], [1, 1]], "Y": [-1, 1, 1, 1]}  
 }
 
-valor_virtual_sesgo = 0.1  
+valor_virtual_sesgo = -1
 
 class Perceptron:
     """
