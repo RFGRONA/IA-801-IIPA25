@@ -118,7 +118,7 @@ class App(tk.Tk):
             ttk.Label(frame_cabecera, image=self.foto_escudo).grid(row=0, column=0, sticky="w")
         except FileNotFoundError: ttk.Label(frame_cabecera, text="[Escudo no encontrado]").grid(row=0, column=0, sticky="w")
         texto_info = ("Inteligencia Artificial 801 - IIPA 2025\nIngeniería de Sistemas y Computación\n"
-                      "Yohan Leon, Oscar Barbosa, Gabriel Martinez")
+                      "Yojahn Leon, Oscar Barbosa, Gabriel Martinez")
         ttk.Label(frame_cabecera, text=texto_info, justify="center", font=("Arial", 12)).grid(row=0, column=1)
         try:
             img_logo = Image.open("logo.png").resize((160, 80), Image.Resampling.LANCZOS); self.foto_logo = ImageTk.PhotoImage(img_logo)

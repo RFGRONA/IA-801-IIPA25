@@ -9,8 +9,8 @@ import random
 COMPUERTAS_LOGICAS = {
     "OR": {"X": [[0, 0], [0, 1], [1, 0], [1, 1]], "Y": [0, 1, 1, 1]},      # Linealmente separable
     "AND": {"X": [[0, 0], [0, 1], [1, 0], [1, 1]], "Y": [0, 0, 0, 1]},     # Linealmente separable
-    "XOR": {"X": [[0, 0], [0, 1], [1, 0], [1, 1]], "Y": [0, 1, 1, 0]},     # NO es linealmente separable
-    "NOT_X2": {"X": [[0, 0], [0, 1], [1, 0], [1, 1]], "Y": [1, 0, 1, 0]} # NO es linealmente separable
+    "XOR": {"X": [[0, 0], [0, 1], [1, 0], [1, 1]], "Y": [0, 1, 1, 0]},     # NO es linealmente separable    
+    "NOT_X2": {"X": [[0, 0], [0, 1], [1, 0], [1, 1]], "Y": [1, 0, 1, 0]}   # Linealmente separable
 }
 
 class Perceptron:

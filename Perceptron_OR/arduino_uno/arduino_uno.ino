@@ -19,9 +19,9 @@ const int PIN_LED = 9; // Pin para el LED de salida
 
 // --- 2. Pesos Finales del Perceptrón (Compuerta AND) ---
 // Estos valores fueron obtenidos del entrenamiento en Python.
-const float w0 = -0.3002; // Peso del sesgo (bias)
-const float w1 = 0.1317;  // Peso para la entrada x1
-const float w2 = 0.1963;  // Peso para la entrada x2
+const float w0 = 0.03657577377837681; // Peso del sesgo (bias)
+const float w1 = 0.4643794177384931;  // Peso para la entrada x1
+const float w2 = -0.9457595849478637;  // Peso para la entrada x2
 
 
 void setup() {
