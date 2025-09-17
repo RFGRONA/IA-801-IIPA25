@@ -36,7 +36,7 @@ State currentState = ESTADO_MENU;
 // --- 4. PARÁMETROS DE LA RED NEURONAL ---
 float w0, w1, w2;
 float w_inicial[3];
-const float TASA_APRENDIZAJE = 0.1;
+const float TASA_APRENDIZAJE = 0.001;
 const int VALOR_SESGO = -1;
 
 // --- 5. DATOS DE ENTRENAMIENTO ---
