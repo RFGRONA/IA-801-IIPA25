@@ -83,25 +83,29 @@ class App(tk.Tk):
         self.title("MLP con Backpropagation - IIPA 2025"); self.geometry("1400x850")
         self.protocol("WM_DELETE_WINDOW", self.cerrar_aplicacion)
         
-        self.mlp_actual = None; self.historial_mse = []; self.epoca_inicial_bloque = 0
-        self.X_train, self.Y_train = [], []; self.nombres_clases = []
+        # <--- CAMBIO: historiales para las métricas de validación ---
+        self.mlp_actual = None
+        self.historial_mse_train, self.historial_mse_val = [], []
+        self.historial_matrices = [] # Guardará las matrices de validación
+        self.epoca_inicial_bloque = 0
+        self.X_train, self.Y_train, self.X_val, self.Y_val = [], [], [], []
+        self.nombres_clases = []
         self.hilo_entrenamiento = None; self.entrenamiento_cancelado = False
-        self.linea_mse = None; self.linea_precision = None
         self.animacion_activa = False
+        
+        # <--- CAMBIO: Nuevas líneas para las gráficas de validación ---
+        self.linea_mse_train, self.linea_mse_val = None, None
+        self.linea_precision_train, self.linea_precision_val = None, None
         
         self.crear_cabecera()
         self.notebook = ttk.Notebook(self); self.tab_entrenamiento = ttk.Frame(self.notebook); self.tab_uso = ttk.Frame(self.notebook)
         self.notebook.add(self.tab_entrenamiento, text="Entrenamiento"); self.notebook.add(self.tab_uso, text="Uso de la Red")
         self.notebook.pack(expand=True, fill="both", padx=10, pady=10)
         
-        # --- CORRECCIÓN AQUÍ ---
-        self.mlp_uso = None
-        # Esta variable es para el entrenamiento
-        self.clases_info = OrderedDict() 
+        self.mlp_uso = None; 
+        self.clases_info = OrderedDict()
         self.clases_info_uso = OrderedDict()
-        
         self.cola_gui = queue.Queue()
-
         self.crear_tab_entrenamiento(); self.crear_tab_uso(); self.procesar_cola_gui()
         self.notebook.bind("<<NotebookTabChanged>>", self.on_tab_changed)
 
@@ -132,7 +136,6 @@ class App(tk.Tk):
         label_logo.grid(row=0, column=2, sticky="e")
         
     def crear_tab_entrenamiento(self):
-        # (código sin cambios)
         frame_izquierdo = ttk.Frame(self.tab_entrenamiento, width=400); frame_izquierdo.pack(side="left", fill="y", padx=10, pady=10); frame_izquierdo.pack_propagate(False)
         frame_graficas = ttk.Frame(self.tab_entrenamiento); frame_graficas.pack(side="left", expand=True, fill="both")
         frame_config = ttk.LabelFrame(frame_izquierdo, text="Configuración del Modelo MLP"); frame_config.pack(fill="x", pady=5)
@@ -157,9 +160,21 @@ class App(tk.Tk):
         self.momentum_activado = tk.BooleanVar(value=True); self.momentum_var = tk.StringVar(value="0.9")
         ttk.Checkbutton(frame_config, text="Activar Momentum:", variable=self.momentum_activado).grid(row=6, column=0, sticky="w", padx=5, pady=5)
         ttk.Entry(frame_config, textvariable=self.momentum_var, width=10).grid(row=6, column=1, sticky="w", padx=5)
+
         ttk.Label(frame_config, text="Épocas por bloque:").grid(row=7, column=0, sticky="w", padx=5, pady=5)
         self.epocas_bloque_var = tk.IntVar(value=500)
         ttk.Entry(frame_config, textvariable=self.epocas_bloque_var, width=10).grid(row=7, column=1, sticky="w", padx=5)
+
+        ttk.Label(frame_config, text="División Dataset (% Entr.):").grid(row=8, column=0, sticky="w", padx=5, pady=5)
+        self.division_var = tk.IntVar(value=80)
+        self.division_label_var = tk.StringVar(value=f"{self.division_var.get()}% / {100-self.division_var.get()}%")
+        
+        frame_slider = ttk.Frame(frame_config)
+        frame_slider.grid(row=8, column=1, columnspan=2, sticky="ew")
+        slider = ttk.Scale(frame_slider, from_=50, to=95, orient="horizontal", variable=self.division_var, command=lambda value: self.division_label_var.set(f"{int(float(value))}% / {100-int(float(value))}%"))
+        slider.pack(side="left", expand=True, fill="x")
+        ttk.Label(frame_slider, textvariable=self.division_label_var, width=10).pack(side="left")
+
         self.btn_iniciar = ttk.Button(frame_izquierdo, text="Iniciar Entrenamiento", command=self.iniciar_entrenamiento_nuevo); self.btn_iniciar.pack(pady=10, fill="x")
         self.btn_cancelar = ttk.Button(frame_izquierdo, text="Cancelar Entrenamiento", command=self.detener_entrenamiento, state="disabled"); self.btn_cancelar.pack(pady=5, fill="x")
         self.label_animacion = ttk.Label(frame_izquierdo, text="", font=("Arial", 10, "italic"))
@@ -210,8 +225,16 @@ class App(tk.Tk):
         self.log_consola.delete("1.0", tk.END)
         self.log_consola.config(state="disabled")
         try:
-            self.X_train, self.Y_train, n_in, n_out, _ = cargar_y_convertir_dataset(self.ruta_dataset.get(), self.ruta_targets.get())
+            porcentaje_entrenamiento = self.division_var.get() / 100.0
+
+            self.X_train, self.Y_train, self.X_val, self.Y_val, n_in, n_out, _ = cargar_y_convertir_dataset(
+                self.ruta_dataset.get(), 
+                self.ruta_targets.get(),
+                porcentaje_entrenamiento
+            )
+            
             if not self.X_train: messagebox.showerror("Error", "No se cargaron datos de entrenamiento."); return
+
             self.clases_info.clear()
             with open(self.ruta_targets.get(), 'r') as f:
                 for line in f:
@@ -232,7 +255,10 @@ class App(tk.Tk):
                 f"   - Momentum (η):              {self.momentum_var.get() if self.momentum_activado.get() else 'Desactivado'}\n"
                 f"   - MSE Deseado:             {self.error_deseado_var.get()}\n"
                 f" Dataset:\n"
-                f"   - Patrones de Entrenamiento: {len(self.X_train)}\n"
+                f"   - Patrones Totales:      {len(self.X_train) + len(self.X_val)}\n"
+                f"   - División:              {self.division_var.get()}% Entrenamiento / {100-self.division_var.get()}% Validación\n"
+                f"   - Patrones Entrenamiento: {len(self.X_train)}\n"
+                f"   - Patrones Validación:    {len(self.X_val)}\n"
                 f"----------------------------------"
             )
             self.log_to_console(resumen_inicial)
@@ -249,25 +275,28 @@ class App(tk.Tk):
 
     def _hilo_entrenamiento_bloque(self):
         try:
-            params = (
-                self.clases_info,
-                float(self.tasa_aprendizaje_var.get()),
-                float(self.error_deseado_var.get()),
-                float(self.momentum_var.get()) if self.momentum_activado.get() else 0.0
-            )
-            # <--- CAMBIO: Ya no se pasa 'log_callback', ahora se recibe 'log_bloque'
-            epoca, historial_mse, historial_matrices, log_bloque, completo = self.mlp_actual.entrenar_bloque(
-                self.X_train, self.Y_train, *params,
+            # <--- CAMBIO: Se desempaquetan los nuevos historiales de validación ---
+            epoca, h_mse_train, h_mse_val, h_matrices, log_b, completo = self.mlp_actual.entrenar_bloque(
+                X_train=self.X_train, Y_train=self.Y_train,
+                X_val=self.X_val, Y_val=self.Y_val,
+                clases_info=self.clases_info,
+                tasa_aprendizaje=float(self.tasa_aprendizaje_var.get()),
+                error_deseado=float(self.error_deseado_var.get()),
+                momentum=float(self.momentum_var.get()) if self.momentum_activado.get() else 0.0,
                 epoca_inicio=self.epoca_inicial_bloque,
                 max_epocas_bloque=self.epocas_bloque_var.get(),
                 cancel_event=lambda: self.entrenamiento_cancelado
             )
+            
+            # <--- CAMBIO: El diccionario de resultado ahora incluye ambos historiales de MSE ---
             resultado = {
                 "epoca_final": epoca,
-                "historial_mse_bloque": historial_mse,
-                "historial_matrices_bloque": historial_matrices,
-                "log_del_bloque": log_bloque # <--- CAMBIO: Se añade la lista de logs al resultado
+                "historial_mse_train_bloque": h_mse_train,
+                "historial_mse_val_bloque": h_mse_val,
+                "historial_matrices_bloque": h_matrices,
+                "log_del_bloque": log_b
             }
+
             self.cola_gui.put(("entrenamiento_finalizado" if completo else "bloque_finalizado", resultado))
         except Exception as e:
             logging.error(f"Excepción en hilo: {e}", exc_info=True)
@@ -304,10 +333,8 @@ class App(tk.Tk):
         self.detener_entrenamiento()
 
     def detener_entrenamiento(self):
-        self.entrenamiento_cancelado = True
-        self.animar_carga(stop=True)
+        self.entrenamiento_cancelado = True; self.animar_carga(stop=True)
         
-        # Guardar el modelo
         if self.mlp_actual:
             logging.info("Guardando estado actual del modelo...")
             self.mlp_actual.guardar_modelo()
@@ -317,24 +344,25 @@ class App(tk.Tk):
 
         self.dibujar_estado_final_graficas()
         
-        # <--- CAMBIO: Generar y mostrar el resumen final ---
-        if self.historial_mse:
-            mse_final = self.historial_mse[-1]
-            matriz_final = self.historial_matrices[-1]
-            precision_final = np.trace(matriz_final) / len(self.X_train)
+        # <--- CAMBIO: Resumen final ahora incluye métricas de validación ---
+        if self.historial_mse_train and self.historial_mse_val:
+            mse_train_final = self.historial_mse_train[-1]
+            mse_val_final = self.historial_mse_val[-1]
+            # La matriz final se calcula sobre el conjunto de validación para el reporte más fiel
+            matriz_final_val = self._calcular_matriz_confusion_estatica(self.X_val, self.Y_val)
+            precision_final_val = np.trace(matriz_final_val) / len(self.X_val) if self.X_val else 0
             
             resumen_final = (
-                f"--- FIN DEL ENTRENAMIENTO ---\n"
-                f" Resultados Finales:\n"
-                f"   - Épocas Totales Entrenadas: {self.epoca_inicial_bloque}\n"
-                f"   - MSE Final:                 {mse_final:.6f}\n"
-                f"   - Precisión Final:           {precision_final:.2%}\n"
+                f"\n--- FIN DEL ENTRENAMIENTO ---\n"
+                f" Resultados Finales (Época {self.epoca_inicial_bloque}):\n"
+                f"   - MSE Entrenamiento: {mse_train_final:.6f}\n"
+                f"   - MSE Validación:    {mse_val_final:.6f}\n"
+                f"   - Precisión Validación:  {precision_final_val:.2%}\n"
                 f"----------------------------------"
             )
             self.log_to_console(resumen_final)
 
-        self.btn_iniciar.config(state="normal")
-        self.btn_cancelar.config(state="disabled")
+        self.btn_iniciar.config(state="normal"); self.btn_cancelar.config(state="disabled")
 
     # --- CAMBIO: Nueva función helper para escribir en la consola ---
     def log_to_console(self, message):
@@ -351,74 +379,166 @@ class App(tk.Tk):
             self.label_animacion.config(text=next(self.spinner)); self.after(200, self.animar_carga)
 
     def limpiar_graficas(self):
-        self.epoca_inicial_bloque = 0; self.historial_mse = []; self.historial_matrices = []
-        self.linea_mse = None; self.linea_precision = None; self.textos_matriz = []
+        self.epoca_inicial_bloque = 0
+        self.historial_mse_train, self.historial_mse_val = [], []
+        self.historial_matrices = []
+        self.linea_mse_train, self.linea_mse_val = None, None
+        self.linea_precision_train, self.linea_precision_val = None, None
+        
         for ax in [self.ax1, self.ax2, self.ax3]: ax.clear(); ax.grid(True)
+        
+        # Gráfica de Error (ax1) se mantiene como estaba originalmente
         self.ax1.set_title("MSE vs. Épocas"); self.ax1.set_xlabel("Época"); self.ax1.set_ylabel("MSE")
-        self.ax2.set_title("Precisión vs. Épocas"); self.ax2.set_xlabel("Época"); self.ax2.set_ylabel("Precisión")
-        self.ax3.set_title("Matriz de Confusión")
-        # <--- CAMBIO: Oculta los ejes cartesianos de la matriz al inicio
+        self.ax1.legend(["Entrenamiento", "Validación"], loc="upper right")
+
+        self.ax2.set_title("Precisión Validación vs Épocas")
+        self.ax2.set_xlabel("Época")
+        self.ax2.set_ylabel("Precisión")
+        self.ax3.set_title("Matriz de Confusión (Validación)"); self.ax3.set_xlabel("Predicción"); self.ax3.set_ylabel("Real")
         self.ax3.set_xticks([]); self.ax3.set_yticks([])
         self.canvas.draw()
         
     def animar_graficas(self, datos_resultado, on_done_callback):
         epoca_final_anterior = self.epoca_inicial_bloque
         self.epoca_inicial_bloque = datos_resultado["epoca_final"]
-        self.historial_mse.extend(datos_resultado["historial_mse_bloque"])
+        self.historial_mse_train.extend(datos_resultado["historial_mse_train_bloque"])
+        self.historial_mse_val.extend(datos_resultado["historial_mse_val_bloque"])
         self.historial_matrices.extend(datos_resultado["historial_matrices_bloque"])
         
         eje_x_nuevo = range(epoca_final_anterior + 1, self.epoca_inicial_bloque + 1)
-        mse_nuevo = datos_resultado["historial_mse_bloque"]
         
         self.animacion_activa = True
-        self._bucle_animacion(eje_x_nuevo, mse_nuevo, datos_resultado["historial_matrices_bloque"], 0, on_done_callback)
+        self._bucle_animacion(
+            eje_x_nuevo,
+            datos_resultado["historial_mse_train_bloque"],
+            datos_resultado["historial_mse_val_bloque"],
+            datos_resultado["historial_matrices_bloque"],
+            0,
+            on_done_callback
+        )
 
-    def _bucle_animacion(self, x_data, mse_data, matrices_data, index, on_done_callback):
+    def _bucle_animacion(self, x_data, mse_train_data, mse_val_data, matrices_data, index, on_done_callback):
         if not self.animacion_activa or index >= len(x_data):
             if self.animacion_activa: self.dibujar_estado_final_graficas(); self.after(100, on_done_callback)
             self.animacion_activa = False; return
 
-        step = 25; delay_ms = 15; MUESTRAS_MATRIZ = 25 # 
+        step = 25; delay_ms = 20; MUESTRAS_MATRIZ = 25
         
-        # 1. Actualizar las líneas
-        if not self.linea_mse: self.linea_mse, = self.ax1.plot([], [], 'r-')
-        if not self.linea_precision: self.linea_precision, = self.ax2.plot([], [], 'g-')
+        if not self.linea_mse_train: self.linea_mse_train, = self.ax1.plot([], [], 'b-', label='Entrenamiento')
+        if not self.linea_mse_val: self.linea_mse_val, = self.ax1.plot([], [], 'r-', label='Validación')
+        if not self.linea_precision_train: self.linea_precision_train, = self.ax2.plot([], [], 'b-', label='Entrenamiento')
+        if not self.linea_precision_val: self.linea_precision_val, = self.ax2.plot([], [], 'r-', label='Validación')
         
         next_index = min(index + step, len(x_data))
-        self.linea_mse.set_data(np.append(self.linea_mse.get_xdata(), x_data[index:next_index]), np.append(self.linea_mse.get_ydata(), mse_data[index:next_index]))
-        precision_data_segmento = [1 - mse for mse in mse_data[index:next_index]]
-        self.linea_precision.set_data(np.append(self.linea_precision.get_xdata(), x_data[index:next_index]), np.append(self.linea_precision.get_ydata(), precision_data_segmento))
-        
-        # 2. Actualizar la matriz de confusión con la data pre-calculada
-        # <--- CAMBIO: Se busca la matriz pre-calculada que corresponde a la época actual
-        indice_matriz = (x_data[index] - 1) // MUESTRAS_MATRIZ
-        if indice_matriz < len(self.historial_matrices):
-            self.dibujar_matriz_confusion_estatica(self.historial_matrices[indice_matriz], epoca_actual=x_data[index])
 
-        self.ax1.relim(); self.ax1.autoscale_view(); self.ax2.relim(); self.ax2.autoscale_view()
+        # Actualizar MSE
+        self.linea_mse_train.set_data(np.append(self.linea_mse_train.get_xdata(), x_data[index:next_index]), np.append(self.linea_mse_train.get_ydata(), mse_train_data[index:next_index]))
+        self.linea_mse_val.set_data(np.append(self.linea_mse_val.get_xdata(), x_data[index:next_index]), np.append(self.linea_mse_val.get_ydata(), mse_val_data[index:next_index]))
+        
+        # Actualizar Precisión
+        if matrices_data:
+            precision_val_segmento = []
+            for i in range(index, next_index):
+                epoca_actual = x_data[i]
+                indice_matriz = (epoca_actual - 1) // MUESTRAS_MATRIZ
+                if indice_matriz < len(matrices_data):
+                    matriz = matrices_data[indice_matriz]
+                    precision = np.trace(matriz) / len(self.X_val) if len(self.X_val) > 0 else 0
+                    precision_val_segmento.append(precision)
+                else:
+                    if len(self.linea_precision_val.get_ydata()) > 0:
+                        precision_val_segmento.append(self.linea_precision_val.get_ydata()[-1])
+                    else:
+                        precision_val_segmento.append(0)
+
+            self.linea_precision_val.set_data(
+                np.append(self.linea_precision_val.get_xdata(), x_data[index:next_index]),
+                np.append(self.linea_precision_val.get_ydata(), precision_val_segmento)
+            )
+
+        # Mostrar Matriz de Confusión
+        if matrices_data:
+            indice_matriz_display = (x_data[index] - 1) // MUESTRAS_MATRIZ
+            if indice_matriz_display < len(matrices_data):
+                matriz_a_mostrar = matrices_data[indice_matriz_display]
+                self.dibujar_matriz_confusion_estatica(matriz_a_mostrar, epoca_actual=x_data[index])
+
+        self.ax1.relim(); self.ax1.autoscale_view(); self.ax1.legend()
+        self.ax2.relim(); self.ax2.autoscale_view() 
         self.canvas.draw()
-        self.after(delay_ms, self._bucle_animacion, x_data, mse_data, matrices_data, next_index, on_done_callback)
+        
+        self.after(delay_ms, self._bucle_animacion, x_data, mse_train_data, mse_val_data, matrices_data, next_index, on_done_callback)
+
+    def _calcular_matriz_confusion_estatica(self, X_data, Y_data):
+        matriz = np.zeros((len(self.nombres_clases), len(self.nombres_clases)))
+        if not X_data: return matriz
+        
+        for x, y_real_vec in zip(X_data, Y_data):
+            prediccion_vec = np.array(self.mlp_actual.predecir(x))
+            target_vectors = list(self.clases_info.values())
+            distancias_real = [np.linalg.norm(np.array(y_real_vec) - np.array(tv)) for tv in target_vectors]
+            idx_real = np.argmin(distancias_real)
+            distancias_pred = [np.linalg.norm(prediccion_vec - np.array(tv)) for tv in target_vectors]
+            idx_pred = np.argmin(distancias_pred)
+            matriz[idx_real, idx_pred] += 1
+        return matriz 
 
     def dibujar_matriz_confusion_estatica(self, matriz, epoca_actual=None):
+        """Toma una matriz (pre-calculada) y la dibuja en el tercer eje (ax3)."""
         self.ax3.clear()
-        if epoca_actual: self.ax3.set_title(f"Matriz de Confusión (Época {epoca_actual})")
-        else: self.ax3.set_title("Matriz de Confusión")
+        if epoca_actual:
+            self.ax3.set_title(f"Matriz de Confusión (Época {epoca_actual})")
+        else:
+            self.ax3.set_title("Matriz de Confusión (Validación)")
+        
         n_clases = len(self.nombres_clases)
-        self.ax3.matshow(matriz, cmap=plt.cm.Blues, alpha=0.7); self.ax3.set_xticks(np.arange(n_clases)); self.ax3.set_yticks(np.arange(n_clases))
-        self.ax3.set_xticklabels(self.nombres_clases); self.ax3.set_yticklabels(self.nombres_clases)
-        for i in range(n_clases):
-            for j in range(n_clases):
+        self.ax3.matshow(matriz, cmap=plt.cm.Blues, alpha=0.7)
+        self.ax3.set_xticks(np.arange(n_clases))
+        self.ax3.set_yticks(np.arange(n_clases))
+        self.ax3.set_xticklabels(self.nombres_clases)
+        self.ax3.set_yticklabels(self.nombres_clases)
+        
+        # Escribe los números dentro de cada celda
+        for i in range(matriz.shape[0]):
+            for j in range(matriz.shape[1]):
                 self.ax3.text(x=j, y=i, s=int(matriz[i, j]), va='center', ha='center', size='large')
     
     def dibujar_estado_final_graficas(self):
-        if not self.historial_mse: return
-        eje_x = range(1, len(self.historial_mse) + 1); precision = [1 - mse for mse in self.historial_mse]
-        if not self.linea_mse: self.linea_mse, = self.ax1.plot(eje_x, self.historial_mse, 'r-')
-        else: self.linea_mse.set_data(eje_x, self.historial_mse)
-        if not self.linea_precision: self.linea_precision, = self.ax2.plot(eje_x, precision, 'g-')
-        else: self.linea_precision.set_data(eje_x, precision)
-        if self.historial_matrices: self.dibujar_matriz_confusion_estatica(self.historial_matrices[-1], epoca_actual=len(self.historial_mse))
-        self.ax1.relim(); self.ax1.autoscale_view(); self.ax2.relim(); self.ax2.autoscale_view()
+        if not self.historial_mse_train: return
+        
+        eje_x = range(1, len(self.historial_mse_train) + 1)
+        
+        # Dibujar las líneas de MSE
+        if not self.linea_mse_train: self.linea_mse_train, = self.ax1.plot(eje_x, self.historial_mse_train, 'b-', label='Entrenamiento')
+        else: self.linea_mse_train.set_data(eje_x, self.historial_mse_train)
+        if not self.linea_mse_val: self.linea_mse_val, = self.ax1.plot(eje_x, self.historial_mse_val, 'r-', label='Validación')
+        else: self.linea_mse_val.set_data(eje_x, self.historial_mse_val)
+
+        # Dibujar la línea de Precisión
+        eje_x_prec = []
+        precision_val = []
+        for i, epoca in enumerate(eje_x):
+            if (epoca % 25 == 0 or epoca == len(eje_x)) and self.historial_matrices:
+                indice_matriz = min( (epoca - 1) // 25, len(self.historial_matrices) - 1)
+                matriz = self.historial_matrices[indice_matriz]
+                acc = np.trace(matriz) / len(self.X_val) if len(self.X_val) > 0 else 0
+                eje_x_prec.append(epoca)
+                precision_val.append(acc)
+        
+        if not self.linea_precision_val:
+            self.linea_precision_val, = self.ax2.plot(eje_x_prec, precision_val, 'r-o', label='Validación')
+        else:
+            self.linea_precision_val.set_data(eje_x_prec, precision_val)
+            self.linea_precision_val.set_linestyle('-')
+            self.linea_precision_val.set_marker('o')
+
+        # Dibujar la Matriz final
+        if self.X_val:
+            matriz_final = self._calcular_matriz_confusion_estatica(self.X_val, self.Y_val)
+            self.dibujar_matriz_confusion_estatica(matriz_final, epoca_actual=len(self.historial_mse_train))
+        
+        self.ax1.relim(); self.ax1.autoscale_view(); self.ax1.legend()
+        self.ax2.relim(); self.ax2.autoscale_view() 
         self.canvas.draw()
 
     def on_tab_changed(self, event):

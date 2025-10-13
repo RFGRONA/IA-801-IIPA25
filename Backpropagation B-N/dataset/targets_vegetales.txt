@@ -1,0 +1,2 @@
+cebollin, 0.9
+lechuga, 0.01
