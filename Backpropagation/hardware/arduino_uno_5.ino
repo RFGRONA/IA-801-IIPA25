@@ -35,8 +35,9 @@ byte colPins[COLS] = {4, 3, 2, A0};
 // --- DEFINICIONES DE LA RED NEURONAL ---
 #define NUM_INPUTS 35        // 5x7 píxeles
 #define MAX_HIDDEN_NEURONS 1 // Límite máximo para proteger la RAM
-#define NUM_OUTPUTS 2        // Para la codificación binaria de 5 vocales
-#define NUM_PATTERNS 15      // 5 vocales x 5 variantes (1 original + 4 con ruido)
+#define NUM_OUTPUTS 3        // Para la codificación binaria de 5 vocales
+
+#define NUM_PATTERNS 25      // 5 vocales x 5 variantes (1 original + 4 con ruido)
 
 // --- DATASET DE VOCALES (Almacenado en Memoria Flash) ---
 // Cada matriz de 5x7 se aplana a un vector de 35 elementos.
@@ -62,15 +63,28 @@ const byte dataset_inputs[NUM_PATTERNS][NUM_INPUTS] PROGMEM = {
   {1,1,1,1,1, 0,0,1,0,1, 0,0,1,0,0, 0,0,1,0,0, 0,0,1,0,0, 0,0,0,0,0, 1,1,1,1,1}, // Ruido 2
   {1,1,1,1,1, 0,0,1,0,0, 1,0,1,0,0, 0,0,1,0,0, 0,0,1,0,0, 0,0,1,0,0, 0,1,1,1,1}, // Ruido 3
   {1,0,1,1,1, 0,0,1,0,0, 0,0,1,0,0, 0,0,1,0,0, 0,0,1,1,0, 0,0,1,0,0, 1,1,1,1,1}, // Ruido 4
-
+  // --- O --- (Original + 4 con ruido)
+  {0,1,1,1,0, 1,0,0,0,1, 1,0,0,0,1, 1,0,0,0,1, 1,0,0,0,1, 1,0,0,0,1, 0,1,1,1,0}, // Original 'O'
+  {0,1,1,1,0, 1,0,0,0,1, 0,0,0,0,1, 1,0,0,0,1, 1,0,0,0,1, 1,0,1,0,1, 0,1,1,1,0}, // Ruido 1
+  {0,1,1,1,1, 1,0,0,0,1, 1,0,0,0,1, 1,0,1,0,1, 1,0,0,0,1, 1,0,0,0,1, 0,1,1,1,0}, // Ruido 2
+  {0,1,1,1,0, 1,0,0,0,1, 1,0,0,0,1, 1,0,0,0,1, 1,0,0,0,1, 1,0,0,0,1, 1,1,1,1,0}, // Ruido 3
+  {0,1,0,1,0, 1,0,0,0,1, 1,0,0,0,1, 1,1,0,0,1, 1,0,0,0,1, 1,0,0,0,1, 0,1,1,1,0}, // Ruido 4
+  // --- U --- (Original + 4 con ruido)
+  {1,0,0,0,1, 1,0,0,0,1, 1,0,0,0,1, 1,0,0,0,1, 1,0,0,0,1, 1,0,0,0,1, 0,1,1,1,0}, // Original 'U'
+  {1,0,0,1,1, 1,0,0,0,1, 1,0,0,0,1, 1,0,0,0,1, 1,0,0,0,1, 1,0,0,0,1, 0,1,1,1,0}, // Ruido 1
+  {1,0,0,0,1, 1,0,0,0,1, 1,0,1,0,1, 1,0,0,0,1, 1,0,0,0,1, 1,0,0,0,1, 0,1,0,1,0}, // Ruido 2
+  {1,0,0,0,1, 0,0,0,0,1, 1,0,0,0,1, 1,0,0,0,1, 1,0,0,1,1, 1,0,0,0,1, 0,1,1,1,0}, // Ruido 3
+  {1,0,0,0,1, 1,0,0,0,1, 1,0,0,0,1, 1,0,0,0,1, 1,0,0,0,1, 1,1,0,0,1, 0,1,1,1,0}  // Ruido 4
 };
 
 // Salidas deseadas en código binario (también en PROGMEM)
 // A=001, E=010, I=100, O=101, U=110
 const byte dataset_outputs[NUM_PATTERNS][NUM_OUTPUTS] PROGMEM = {
-  {0,1}, {0,1}, {0,1}, {0,1}, {0,1}, // A
-  {1,0}, {1,0}, {1,0}, {1,0}, {1,0}, // E
-  {1,1}, {1,1}, {1,1}, {1,1}, {1,1}  // I
+  {0,0,1}, {0,0,1}, {0,0,1}, {0,0,1}, {0,0,1}, // A
+  {0,1,0}, {0,1,0}, {0,1,0}, {0,1,0}, {0,1,0}, // E
+  {1,0,0}, {1,0,0}, {1,0,0}, {1,0,0}, {1,0,0}, // I
+  {1,0,1}, {1,0,1}, {1,0,1}, {1,0,1}, {1,0,1}, // O
+  {1,1,0}, {1,1,0}, {1,1,0}, {1,1,0}, {1,1,0}  // U
 };
 
 // --- ESTRUCTURAS DE LA RED (Variables Globales en RAM) ---
@@ -97,7 +111,7 @@ enum State {
 State currentState = MENU_NEURONAS;
 
 // Hiperparámetros configurables por el usuario
-byte num_neuronas_ocultas = 1; // Valor por defecto
+byte num_neuronas_ocultas = 5; // Valor por defecto
 float alfa = 0.1;
 float mse_obj = 0.01;
 int porcentaje_entrenamiento = 80; // Valor por defecto (80%)
@@ -741,29 +755,24 @@ void predict_and_show() {
   // Seleccionar un índice de patrón aleatorio del dataset completo
   byte random_index = random(NUM_PATTERNS);
   
-  // Limpiamos el array global antes de usarlo
-  memset(current_input, 0, NUM_INPUTS); 
+  byte current_input[NUM_INPUTS];
   memcpy_P(current_input, dataset_inputs[random_index], NUM_INPUTS);
 
   // Realizar el feedforward
   feedforward(current_input);
 
   // Lógica para interpretar la salida binaria
-  byte binary_output[NUM_OUTPUTS];
+  byte binary_output[3];
   for (int k = 0; k < NUM_OUTPUTS; k++) {
     binary_output[k] = (salidas_finales[k] > 0.5) ? 1 : 0;
   }
   
   // Buscar coincidencia y determinar la letra
   char predicted_char = '?';
-  for (int i = 0; i < NUM_PATTERNS; i+=5) { // Revisar las originales (A=0, E=5, I=10, etc.)
+  for (int i = 0; i < NUM_PATTERNS; i+=5) { // Revisar solo las 5 vocales originales
     byte target[NUM_OUTPUTS];
-    
-    // Le pasamos la DIRECCIÓN de la fila i-ésima usando el operador '&'.
-    // Esto le da a memcpy_P la ubicación correcta en la memoria Flash para leer.
-    memcpy_P(target, &(dataset_outputs[i]), NUM_OUTPUTS);
-
-    if (target[0] == binary_output[0] && target[1] == binary_output[1]) {
+    memcpy_P(target, dataset_outputs[i], NUM_OUTPUTS);
+    if (target[0] == binary_output[0] && target[1] == binary_output[1] && target[2] == binary_output[2]) {
       // Asignar letra basado en el índice (0=A, 5=E, 10=I, etc.)
       predicted_char = "AEIOU"[i/5];
       break;

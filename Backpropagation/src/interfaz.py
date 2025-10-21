@@ -244,7 +244,8 @@ class App(tk.Tk):
             self.X_train, self.Y_train, self.X_val, self.Y_val, n_in, n_out, _, self.rutas_imagenes_totales = cargar_y_convertir_dataset(
                 self.ruta_dataset.get(), 
                 self.ruta_targets.get(),
-                porcentaje_entrenamiento
+                porcentaje_entrenamiento,
+                semilla=self.semilla_var.get()
             )
             
             if not self.X_train: messagebox.showerror("Error", "No se cargaron datos de entrenamiento."); return
@@ -411,7 +412,7 @@ class App(tk.Tk):
         self.ax1.set_title("MSE vs. Épocas"); self.ax1.set_xlabel("Época"); self.ax1.set_ylabel("MSE")
         self.ax1.legend(["Entrenamiento", "Validación"], loc="upper right")
 
-        self.ax2.set_title("Precisión Validación vs Épocas")
+        self.ax2.set_title("Precisión Validación vs Épocas (cada 25 épocas)")
         self.ax2.set_xlabel("Época")
         self.ax2.set_ylabel("Precisión")
         self.ax3.set_title("Matriz de Confusión (Validación)"); self.ax3.set_xlabel("Predicción"); self.ax3.set_ylabel("Real")
@@ -638,18 +639,22 @@ class App(tk.Tk):
         
         try:
             img = Image.open(ruta)
-            img_display = img.resize((100, 140), Image.Resampling.NEAREST) 
-            photo = ImageTk.PhotoImage(img_display)
+            photo = self._crear_imagen_previsualizacion(img)
             self.label_imagen_predecida.config(image=photo)
             self.label_imagen_predecida.image = photo 
+            
             vector_entrada = convertir_imagen_individual(ruta)
             if len(vector_entrada) != self.mlp_uso.neuronas_entrada:
                 messagebox.showerror("Error", f"La imagen no tiene el tamaño correcto. Se esperaba un vector de {self.mlp_uso.neuronas_entrada} píxeles.")
                 return
             
-            _, salidas_finales = self.mlp_uso._forward_pass(vector_entrada)
+            # Usamos el método público .predecir(), que devuelve una lista de Python
+            salidas_finales = self.mlp_uso.predecir(vector_entrada) 
+            
+            # Ahora la siguiente línea funciona porque 'salidas_finales' es una lista normal
             self.label_prediccion_binaria.config(text=f"Salida: {[round(s, 2) for s in salidas_finales]}")
 
+            # El resto de la lógica no cambia
             prediccion_vec = np.array(salidas_finales)
             target_vectors = list(self.clases_info_uso.values())
             nombres_clases = list(self.clases_info_uso.keys())
@@ -698,8 +703,7 @@ class App(tk.Tk):
         # Ahora, el resto del código es idéntico al de predecir_imagen
         try:
             img = Image.open(ruta_aleatoria)
-            img_display = img.resize((100, 140), Image.Resampling.NEAREST) 
-            photo = ImageTk.PhotoImage(img_display)
+            photo = self._crear_imagen_previsualizacion(img)
             self.label_imagen_predecida.config(image=photo)
             self.label_imagen_predecida.image = photo 
             
@@ -725,7 +729,44 @@ class App(tk.Tk):
 
         except Exception as e:
             messagebox.showerror("Error al Predecir", str(e))
+    
+    def _crear_imagen_previsualizacion(self, pil_image):
+        """
+        Crea una imagen de previsualización con tamaño dinámico.
+        - Agranda imágenes pequeñas (como las vocales) de forma nítida.
+        - Encoge imágenes grandes manteniendo su proporción.
+        """
+        # Definimos el tamaño máximo del contenedor de la previsualización
+        max_width = 150
+        max_height = 200
         
+        original_width, original_height = pil_image.size
+        
+        # --- LÓGICA PARA IMÁGENES PEQUEÑAS (ej. vocales de 7x5) ---
+        if original_width < 50 and original_height < 50:
+            # Agrandamos la imagen para que sea visible, usando NEAREST para mantener los píxeles nítidos.
+            # Un factor de 20 hará que una imagen de 5x7 se vea como 100x140.
+            zoom_factor = 20 
+            new_width = original_width * zoom_factor
+            new_height = original_height * zoom_factor
+            # Asegurarnos de que no exceda el máximo
+            if new_width > max_width or new_height > max_height:
+                zoom_factor = min(max_width // original_width, max_height // original_height)
+            
+            preview_img = pil_image.resize(
+                (original_width * zoom_factor, original_height * zoom_factor),
+                Image.Resampling.NEAREST
+            )
+        # --- LÓGICA PARA IMÁGENES GRANDES ---
+        else:
+            # Hacemos una copia para no modificar la imagen original
+            preview_img = pil_image.copy()
+            # El método .thumbnail() es perfecto: reduce la imagen para que quepa en el
+            # cuadro (max_width, max_height) MANTENIENDO LA PROPORCIÓN.
+            preview_img.thumbnail((max_width, max_height), Image.Resampling.LANCZOS)
+
+        return ImageTk.PhotoImage(preview_img)
+            
 if __name__ == "__main__":
     app = App()
     app.mainloop()

@@ -3,11 +3,15 @@ import numpy as np
 from PIL import Image
 import random 
 
-def cargar_y_convertir_dataset(ruta_dataset, ruta_targets, porcentaje_entrenamiento=0.8):
+def cargar_y_convertir_dataset(ruta_dataset, ruta_targets, porcentaje_entrenamiento=0.8, semilla=0):
     """
     Carga un dataset de imágenes, las convierte a escala de grises, las aplana a vectores,
     y las divide en conjuntos de entrenamiento y validación.
     """
+
+    if semilla != 0:
+        random.seed(semilla)
+
     # 1. Cargar los patrones de salida (targets.txt)
     targets = {}
     tamano_salida = -1
