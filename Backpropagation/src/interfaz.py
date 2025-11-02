@@ -397,7 +397,7 @@ class App(tk.Tk):
 
     def animar_carga(self, stop=False):
         if stop:
-            self.label_animacion.config(text="Cálculos finalizados.")
+            self.label_animacion.config(text="Cálculos finalizados.")   
 
     def limpiar_graficas(self):
         self.epoca_inicial_bloque = 0
