@@ -8,7 +8,7 @@ basados en la presentación de la clase .
 
 KERNELS = {
     # Un kernel básico que no hace nada, solo devuelve la imagen original.
-    "Identidad": np.array([
+    "Original (Tamaño y Color)": np.array([
         [0, 0, 0],
         [0, 1, 0],
         [0, 0, 0]

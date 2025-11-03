@@ -133,7 +133,7 @@ class App(tk.Tk):
         self.img_muestra_original = None
         self.img_muestra_procesada = None
         self.var_escala = tk.StringVar(value="48x48")
-        self.var_rotacion_aleatoria = tk.BooleanVar(value=False)
+        self.var_cantidad_aumentos = tk.StringVar(value="1")
         self.var_color = tk.StringVar(value="gris") 
         self.var_padding = tk.BooleanVar(value=True)
         self.entries_filtro_manual_vars = []  
@@ -844,10 +844,11 @@ class App(tk.Tk):
         frame_transform.pack(fill="x", padx=10, pady=5)
         ttk.Label(frame_transform, text="Reescalar (Ancho x Alto):").grid(row=0, column=0, sticky="w", padx=5, pady=5)
         ttk.Entry(frame_transform, textvariable=self.var_escala, width=10).grid(row=0, column=1, padx=5, pady=5)
-        ttk.Label(frame_transform, text="Rotación:").grid(row=1, column=0, sticky="w", padx=5, pady=5)
-        self.check_rotacion = ttk.Checkbutton(frame_transform, text="Activar Rotación Aleatoria (±15°)", 
-                                              variable=self.var_rotacion_aleatoria, onvalue=True, offvalue=False)
-        self.check_rotacion.grid(row=1, column=1, padx=5, pady=5, sticky="w")
+
+        ttk.Label(frame_transform, text="Rotaciones por filtro:").grid(row=1, column=0, sticky="w", padx=5, pady=5)
+        self.entry_cantidad_aumentos = ttk.Entry(frame_transform, textvariable=self.var_cantidad_aumentos, width=10)
+        self.entry_cantidad_aumentos.grid(row=1, column=1, padx=5, pady=5, sticky="w")
+
         ttk.Label(frame_transform, text="Color:").grid(row=2, column=0, sticky="w", padx=5, pady=5)
         frame_color_radios = ttk.Frame(frame_transform)
         frame_color_radios.grid(row=2, column=1, columnspan=2, sticky="w")
@@ -1011,7 +1012,7 @@ class App(tk.Tk):
             messagebox.showerror("Error al Cargar Muestra", f"No se pudo cargar la imagen de muestra:\n{ruta_muestra}\nError: {e}")
 
     def _actualizar_preview(self):
-        """(MODIFICADA) Aplica el pipeline SOLO al panel de "Procesada"."""
+        """(MODIFICADA) Pasa el booleano de rotación."""
         if not self.img_muestra_original:
             messagebox.showwarning("Sin Imagen", "Primero carga una imagen de muestra.")
             return
@@ -1021,26 +1022,25 @@ class App(tk.Tk):
             settings = self._leer_controles_pipeline()
             if settings is None: return
 
-            # --- INICIO DE CORRECCIÓN ---
-            # Para la preview, aplicamos todos los filtros seleccionados en cadena
             kernels_en_cadena = list(settings['kernels_dict'].values())
+            
+            # --- MODIFICADO (Punto 2) ---
+            # Si el usuario pide > 1 aumentos, mostrar un ejemplo rotado.
+            aplicar_rot_preview = (settings['cantidad_aumentos'] > 1)
             
             self.img_muestra_procesada = self._aplicar_pipeline_a_imagen(
                 self.img_muestra_original, 
                 settings, 
-                kernel_list=kernels_en_cadena, # <-- Pasar la lista de kernels
-                para_preview=True             # <-- Pasar el argumento de preview
+                kernel_list=kernels_en_cadena,
+                aplicar_rotacion=aplicar_rot_preview # <-- MODIFICADO
             )
-            # --- FIN DE CORRECCIÓN ---
+            # --- FIN MODIFICADO ---
 
-            # Actualizar SOLO el panel derecho (Procesada)
             img_tk_procesada = self._crear_imagen_previsualizacion(self.img_muestra_procesada)
-            self.label_img_procesada.config(image=img_tk_procesada, text="")
-            self.label_img_procesada.image = img_tk_procesada
+            self.label_img_procesada.config(image=img_tk_procesada, text=""); self.label_img_procesada.image = img_tk_procesada
             self._mostrar_matriz(self.text_matriz_procesada, np.array(self.img_muestra_procesada))
             
-            # El panel izquierdo (Original) no se toca, ya se cargó en _cargar_imagen_muestra
-
+            self._mostrar_matriz(self.text_matriz_original, np.array(self.img_muestra_original))
             logging.info(f"Previsualización actualizada.")
             
         except Exception as e:
@@ -1102,64 +1102,33 @@ class App(tk.Tk):
 
     def _hilo_generar_individual(self, settings, source_root, dest_root):
         """(MODIFICADO v5) Hilo de trabajo para la generación individual.
-        - Añadidos más logs de progreso.
-        - Guarda la "original" (solo escalado/color, SIN rotación/filtros)
-        - Guarda una imagen por cada filtro (CON rotación/filtros)
+        - Ya NO guarda la 'original' (Punto 1).
+        - Añade bucle de 'cantidad_aumentos' (Punto 2).
         """
         try:
             self.cola_gui.put(("log_message", f"--- Iniciando generación (Individual) en: {dest_root} ---"))
             procesados_total = 0
             
-            # 1. Iterar sobre el dataset base UNA VEZ para guardar las "originales"
-            self.cola_gui.put(("log_message", "  Procesando: Imágenes _original (base)..."))
-            for dirpath, _, filenames in os.walk(source_root):
-                
-                # --- INICIO DE NUEVO LOG ---
-                valid_files = [f for f in filenames if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
-                if not valid_files:
-                    continue # Omitir carpetas vacías o irrelevantes (ej. .git)
-                
-                relative_dir = os.path.relpath(dirpath, source_root)
-                self.cola_gui.put(("log_message", f"    -> Aplicando a carpeta: {relative_dir} ({len(valid_files)} imágenes)"))
-                # --- FIN DE NUEVO LOG ---
+            # --- MODIFICADO (Punto 2) ---
+            cantidad_aumentos = settings['cantidad_aumentos']
+            # Determinar si se aplica rotación. Si N=1, no rotar. Si N>1, rotar.
+            aplicar_rotacion = (cantidad_aumentos > 1)
+            self.cola_gui.put(("log_message", f"Generando {cantidad_aumentos} aumentos por imagen/filtro."))
+            if aplicar_rotacion:
+                 self.cola_gui.put(("log_message", "(Rotación aleatoria activada)"))
+            # --- FIN MODIFICADO ---
 
-                for filename in valid_files:
-                    source_path = os.path.join(dirpath, filename)
-                    current_settings = settings.copy() 
-
-                    relative_path = os.path.relpath(source_path, source_root)
-                    base_filename, ext = os.path.splitext(os.path.basename(relative_path))
-                    dest_dir_final = os.path.join(dest_root, relative_dir)
-                    os.makedirs(dest_dir_final, exist_ok=True)
-
-                    try:
-                        settings_orig = current_settings.copy()
-                        settings_orig['rotacion_aleatoria'] = False 
-                        
-                        dest_filename_orig = f"{base_filename}_original{ext}"
-                        dest_path_orig = os.path.join(dest_dir_final, dest_filename_orig)
-                        
-                        with Image.open(source_path) as img:
-                            img_procesada = self._aplicar_pipeline_a_imagen(img, settings_orig, kernel_list=[])
-                            img_procesada.save(dest_path_orig)
-                            procesados_total += 1
-                    except Exception as e:
-                        logging.warning(f"No se pudo guardar la 'original' de {source_path}: {e}")
-
-            # 2. Iterar AHORA por cada filtro
+            # Iterar por cada filtro seleccionado
             for nombre_kernel, kernel in settings['kernels_dict'].items():
                 self.cola_gui.put(("log_message", f"  Procesando con filtro: {nombre_kernel}"))
                 
                 for dirpath, _, filenames in os.walk(source_root):
-                    
-                    # --- INICIO DE NUEVO LOG ---
                     valid_files = [f for f in filenames if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
                     if not valid_files:
                         continue 
                     
                     relative_dir = os.path.relpath(dirpath, source_root)
                     self.cola_gui.put(("log_message", f"    -> Aplicando a carpeta: {relative_dir} ({len(valid_files)} imágenes)"))
-                    # --- FIN DE NUEVO LOG ---
 
                     for filename in valid_files:
                         source_path = os.path.join(dirpath, filename)
@@ -1170,22 +1139,31 @@ class App(tk.Tk):
                         relative_dir = os.path.dirname(relative_path)
                         base_filename, ext = os.path.splitext(os.path.basename(relative_path))
                         
-                        nombre_filtro_limpio = nombre_kernel.replace(" ", "-").replace("(", "").replace(")", "")
-                        dest_filename_filtro = f"{base_filename}_{nombre_filtro_limpio}{ext}"
-                        
                         dest_dir_final = os.path.join(dest_root, relative_dir)
-                        dest_path_filtro = os.path.join(dest_dir_final, dest_filename_filtro)
                         os.makedirs(dest_dir_final, exist_ok=True)
-
-                        try:
-                            with Image.open(source_path) as img:
-                                img_procesada_filtro = self._aplicar_pipeline_a_imagen(img, current_settings, kernel_list=kernel_list)
-                                img_procesada_filtro.save(dest_path_filtro)
-                                procesados_total += 1
-                        except Exception as e:
-                            logging.warning(f"No se pudo procesar {source_path} con {nombre_kernel}: {e}")
+                        
+                        # --- MODIFICADO: Bucle de Aumentos (Punto 2) ---
+                        for i in range(cantidad_aumentos):
+                            try:
+                                nombre_filtro_limpio = nombre_kernel.replace(" ", "-").replace("(", "").replace(")", "")
+                                # Nuevo nombre: Pez1_Sobel_aug_0.jpg
+                                dest_filename_filtro = f"{base_filename}_{nombre_filtro_limpio}_aug{i}{ext}"
+                                dest_path_filtro = os.path.join(dest_dir_final, dest_filename_filtro)
+                                
+                                with Image.open(source_path) as img:
+                                    img_procesada_filtro = self._aplicar_pipeline_a_imagen(
+                                        img, 
+                                        current_settings, 
+                                        kernel_list=kernel_list, 
+                                        aplicar_rotacion=aplicar_rotacion
+                                    )
+                                    img_procesada_filtro.save(dest_path_filtro)
+                                    procesados_total += 1
+                            except Exception as e:
+                                logging.warning(f"No se pudo procesar {source_path} con {nombre_kernel} (aug {i}): {e}")
+                        # --- FIN MODIFICADO ---
             
-            self.cola_gui.put(("log_message", f"Generadas {procesados_total} imágenes (incluyendo originales)."))
+            self.cola_gui.put(("log_message", f"Generadas {procesados_total} imágenes."))
             self.cola_gui.put(("log_message", f"--- Generación (Individual) completada ---"))
             self.cola_gui.put(("generation_complete", (procesados_total, dest_root)))
 
@@ -1239,89 +1217,75 @@ class App(tk.Tk):
 
     def _hilo_generar_auto(self, base_settings, source_root, dest_root, combinaciones, total_combinaciones):
         """(MODIFICADO v5) Hilo de trabajo para la generación combinatoria.
-        - Añadidos más logs de progreso.
-        - Guarda la "original" (solo escalado/color, SIN rotación/filtros)
-        - Guarda una imagen por cada combinación (CON rotación/filtros)
+        - Ya NO guarda la 'original' (Punto 1).
+        - Añade bucle de 'cantidad_aumentos' (Punto 2).
         """
         try:
             self.cola_gui.put(("log_message", f"--- Iniciando generación combinatoria ({total_combinaciones} comb.) en: {dest_root} ---"))
             procesados_total = 0
             
-            # 1. Recolectar todas las imágenes base primero
+            # --- MODIFICADO (Punto 2) ---
+            cantidad_aumentos = base_settings['cantidad_aumentos']
+            aplicar_rotacion = (cantidad_aumentos > 1)
+            self.cola_gui.put(("log_message", f"Generando {cantidad_aumentos} aumentos por imagen/combinación."))
+            if aplicar_rotacion:
+                 self.cola_gui.put(("log_message", "(Rotación aleatoria activada)"))
+            # --- FIN MODIFICADO ---
+            
+            # Recolectar imágenes
             source_images_paths = []
             for dirpath, _, filenames in os.walk(source_root):
                 for filename in filenames:
                     if filename.lower().endswith(('.png', '.jpg', '.jpeg')):
                         source_images_paths.append(os.path.join(dirpath, filename))
-            
-            if not source_images_paths:
-                self.cola_gui.put(("log_message", "Error: No se encontraron imágenes en la carpeta base."))
-                return
-
             self.cola_gui.put(("log_message", f"Encontradas {len(source_images_paths)} imágenes base para procesar."))
 
-            # 2. Guardar las versiones "originales" (SIN filtros, SIN rotación)
-            self.cola_gui.put(("log_message", "  Procesando: Imágenes _original (base)..."))
-            for source_path in source_images_paths:
-                try:
-                    current_settings = base_settings.copy()
-                    relative_path = os.path.relpath(source_path, source_root)
-                    relative_dir = os.path.dirname(relative_path)
-                    base_filename, ext = os.path.splitext(os.path.basename(relative_path))
-                    dest_dir_final = os.path.join(dest_root, relative_dir)
-                    os.makedirs(dest_dir_final, exist_ok=True)
-
-                    settings_orig = current_settings.copy()
-                    settings_orig['rotacion_aleatoria'] = False 
-                    
-                    dest_filename_orig = f"{base_filename}_original{ext}"
-                    dest_path_orig = os.path.join(dest_dir_final, dest_filename_orig)
-                    
-                    with Image.open(source_path) as img:
-                        img_procesada = self._aplicar_pipeline_a_imagen(img, settings_orig, kernel_list=[])
-                        img_procesada.save(dest_path_orig)
-                        procesados_total += 1
-                except Exception as e:
-                    logging.warning(f"No se pudo guardar la 'original' de {source_path}: {e}")
-
-            # 3. Guardar una versión por CADA COMBINACIÓN
+            # Iterar por cada COMBINACIÓN
             for i, combo_tuplas in enumerate(combinaciones):
                 combo_nombre = "_".join([t[0].replace(" ", "-").replace("(", "").replace(")", "") for t in combo_tuplas])
                 combo_kernels = [t[1] for t in combo_tuplas] 
 
                 self.cola_gui.put(("log_message", f"  Procesando Combinación {i+1}/{total_combinaciones} ({combo_nombre})..."))
 
-                # --- INICIO DE NUEVO LOG ---
-                # Agrupamos por carpeta para loguear
+                # Agrupar por carpeta para loguear
                 imagenes_por_carpeta = {}
                 for s_path in source_images_paths:
                     rel_dir = os.path.dirname(os.path.relpath(s_path, source_root))
-                    if rel_dir not in imagenes_por_carpeta:
-                        imagenes_por_carpeta[rel_dir] = []
+                    if rel_dir not in imagenes_por_carpeta: imagenes_por_carpeta[rel_dir] = []
                     imagenes_por_carpeta[rel_dir].append(s_path)
                 
+                # Iterar por cada CARPETA
                 for relative_dir, image_paths in imagenes_por_carpeta.items():
                     self.cola_gui.put(("log_message", f"    -> Aplicando a carpeta: {relative_dir} ({len(image_paths)} imágenes)"))
-                # --- FIN DE NUEVO LOG ---
-
+                    
+                    # Iterar por cada IMAGEN
                     for source_path in image_paths:
-                        try:
-                            current_settings = base_settings.copy()
-                            base_filename, ext = os.path.splitext(os.path.basename(source_path))
-                            
-                            dest_filename_combo = f"{base_filename}_{combo_nombre}{ext}"
-                            dest_dir_final = os.path.join(dest_root, relative_dir)
-                            dest_path_combo = os.path.join(dest_dir_final, dest_filename_combo)
-                            os.makedirs(dest_dir_final, exist_ok=True)
-                            
-                            with Image.open(source_path) as img:
-                                img_procesada_combo = self._aplicar_pipeline_a_imagen(img, current_settings, kernel_list=combo_kernels)
-                                img_procesada_combo.save(dest_path_combo)
-                                procesados_total += 1
-                        except Exception as e:
-                            logging.warning(f"No se pudo procesar (auto) {source_path} con {combo_nombre}: {e}")
+                        current_settings = base_settings.copy()
+                        base_filename, ext = os.path.splitext(os.path.basename(source_path))
+                        dest_dir_final = os.path.join(dest_root, relative_dir)
+                        os.makedirs(dest_dir_final, exist_ok=True)
 
-            self.cola_gui.put(("log_message", f"Generadas {procesados_total} imágenes (incluyendo originales)."))
+                        # --- MODIFICADO: Bucle de Aumentos (Punto 2) ---
+                        for j in range(cantidad_aumentos):
+                            try:
+                                # Nuevo nombre: Pez1_Enfoque_Sobel_aug_0.jpg
+                                dest_filename_combo = f"{base_filename}_{combo_nombre}_aug{j}{ext}"
+                                dest_path_combo = os.path.join(dest_dir_final, dest_filename_combo)
+                                
+                                with Image.open(source_path) as img:
+                                    img_procesada_combo = self._aplicar_pipeline_a_imagen(
+                                        img, 
+                                        current_settings, 
+                                        kernel_list=combo_kernels,
+                                        aplicar_rotacion=aplicar_rotacion
+                                    )
+                                    img_procesada_combo.save(dest_path_combo)
+                                    procesados_total += 1
+                            except Exception as e:
+                                logging.warning(f"No se pudo procesar (auto) {source_path} con {combo_nombre} (aug {j}): {e}")
+                        # --- FIN MODIFICADO ---
+
+            self.cola_gui.put(("log_message", f"Generadas {procesados_total} imágenes."))
             self.cola_gui.put(("log_message", f"--- Generación combinatoria completada ---"))
             self.cola_gui.put(("generation_complete", (procesados_total, dest_root)))
 
@@ -1331,8 +1295,7 @@ class App(tk.Tk):
 
     def _leer_controles_pipeline(self):
         """
-        Lee la configuración de la UI. Devuelve un diccionario 'settings'.
-        Ahora devuelve 'kernels_dict' con {nombre: array}
+        Lee la configuración de la UI. Lee la cantidad de aumentos.
         """
         settings = {}
         try:
@@ -1344,12 +1307,20 @@ class App(tk.Tk):
             messagebox.showerror("Error de Formato", "El formato de reescalado debe ser 'Ancho x Alto', ej: '50x50'.")
             return None
 
-        settings['rotacion_aleatoria'] = self.var_rotacion_aleatoria.get()
+        # --- MODIFICADO (Punto 2) ---
+        try:
+            settings['cantidad_aumentos'] = int(self.var_cantidad_aumentos.get())
+            if settings['cantidad_aumentos'] < 1:
+                raise ValueError("La cantidad debe ser 1 o más")
+        except Exception:
+            messagebox.showerror("Error de Formato", "La 'Cantidad de Aumentos' debe ser un número entero (ej. 1, 5, 10).")
+            return None
+        # --- FIN MODIFICADO ---
+
         settings['modo_color'] = self.var_color.get()
         settings['usar_padding'] = self.var_padding.get()
 
-        # --- MODIFICADO: Devolver Nombres y Kernels (Punto 2) ---
-        settings['kernels_dict'] = OrderedDict() # Usamos OrderedDict para mantener el orden de selección
+        settings['kernels_dict'] = OrderedDict() 
         selected_indices = self.filtro_listbox.curselection()
         selected_filtros = [self.filtro_listbox.get(i) for i in selected_indices]
         
@@ -1363,29 +1334,21 @@ class App(tk.Tk):
                     return None
             else:
                 settings['kernels_dict'][nombre_filtro] = KERNELS.get(nombre_filtro)
-        # --- FIN MODIFICADO ---
         
         return settings
 
-    def _aplicar_pipeline_a_imagen(self, pil_img, settings, kernel_list, para_preview=False):
+    def _aplicar_pipeline_a_imagen(self, pil_img, settings, kernel_list, aplicar_rotacion=False):
         """
-        (MODIFICADA)
-        Aplica el pipeline. Acepta 'para_preview' para la rotación aleatoria.
+        Aplica el pipeline. Acepta un booleano para aplicar rotación.
         """
         procesada_pil = pil_img.copy()
         procesada_pil = procesada_pil.resize(settings['escala'], Image.Resampling.LANCZOS)
         
-        if settings['rotacion_aleatoria']:
+        # --- MODIFICADO (Punto 2) ---
+        if aplicar_rotacion:
             angulo = random.uniform(-15.0, 15.0)
-            
-            # --- INICIO DE CORRECCIÓN ---
-            # Usar el argumento para_preview
-            if para_preview:
-                # Mostrar el ángulo en la consola si es preview
-                logging.info(f"Preview: aplicando rotación aleatoria de {angulo:.1f}°")
-            # --- FIN DE CORRECCIÓN ---
-                
             procesada_pil = procesada_pil.rotate(angulo, resample=Image.Resampling.BICUBIC, expand=False, fillcolor=0)
+        # --- FIN MODIFICADO ---
 
         if settings['modo_color'] == 'gris':
             if procesada_pil.mode != 'L': procesada_pil = procesada_pil.convert('L')
@@ -1394,7 +1357,6 @@ class App(tk.Tk):
 
         matriz_procesada = np.array(procesada_pil)
         
-        # Aplica los kernels que se le pasaron (en cadena)
         for kernel in kernel_list:
             if kernel is not None:
                 matriz_procesada = convolve_2d_manual(matriz_procesada, kernel, settings['usar_padding'])
