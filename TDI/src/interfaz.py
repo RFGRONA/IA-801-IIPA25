@@ -165,24 +165,45 @@ class App(tk.Tk):
         self.quit()
 
     def crear_cabecera(self):
-        frame_cabecera = ttk.Frame(self, height=100); frame_cabecera.pack(fill="x", padx=10, pady=5)
-        frame_cabecera.grid_columnconfigure(0, weight=1); frame_cabecera.grid_columnconfigure(1, weight=2); frame_cabecera.grid_columnconfigure(2, weight=1)
+        frame_cabecera = ttk.Frame(self, height=100)
+        frame_cabecera.pack(fill="x", padx=10, pady=5)
+        frame_cabecera.grid_columnconfigure(0, weight=1)
+        frame_cabecera.grid_columnconfigure(1, weight=2)
+        frame_cabecera.grid_columnconfigure(2, weight=1)
+        
+        # --- ESCUDO ---
         label_escudo = ttk.Label(frame_cabecera)
         try:
-            ruta_escudo = resource_path("TDI\src\escudo.png")
+            # CLAVE: Usamos solo el nombre del archivo. 
+            # PyInstaller debe haber empaquetado 'escudo.png' en la raíz con --add-data "TDI/src/escudo.png:."
+            ruta_escudo = resource_path("escudo.png")
             img_escudo = Image.open(ruta_escudo).resize((60, 80), Image.Resampling.LANCZOS)
-            foto_escudo = ImageTk.PhotoImage(img_escudo); label_escudo.image = foto_escudo; label_escudo.config(image=foto_escudo)
-        except Exception: label_escudo.config(text="[Escudo]")
+            foto_escudo = ImageTk.PhotoImage(img_escudo)
+            label_escudo.image = foto_escudo
+            label_escudo.config(image=foto_escudo)
+        except Exception:
+            # Se incluye un manejo de error para cuando no se encuentre la imagen
+            label_escudo.config(text="[Escudo]")
+            
         label_escudo.grid(row=0, column=0, sticky="w")
+        
+        # --- TEXTO CENTRAL ---
         texto_info = ("Inteligencia Artificial 801 - IIPA 2025\nIngeniería de Sistemas y Computación\n"
-                      "Yohan Leon, Oscar Barbosa, Gabriel Martinez")
+                    "Yohan Leon, Oscar Barbosa, Gabriel Martinez")
         ttk.Label(frame_cabecera, text=texto_info, justify="center", font=("Arial", 12)).grid(row=0, column=1)
+        
+        # --- LOGO ---
         label_logo = ttk.Label(frame_cabecera)
         try:
-            ruta_logo = resource_path("TDI\src\logo.png")
+            # CLAVE: Usamos solo el nombre del archivo, como fue empaquetado.
+            ruta_logo = resource_path("logo.png")
             img_logo = Image.open(ruta_logo).resize((160, 80), Image.Resampling.LANCZOS)
-            foto_logo = ImageTk.PhotoImage(img_logo); label_logo.image = foto_logo; label_logo.config(image=foto_logo)
-        except Exception: label_logo.config(text="[Logo]")
+            foto_logo = ImageTk.PhotoImage(img_logo)
+            label_logo.image = foto_logo
+            label_logo.config(image=foto_logo)
+        except Exception:
+            label_logo.config(text="[Logo]")
+            
         label_logo.grid(row=0, column=2, sticky="e")
         
     def crear_tab_entrenamiento(self):
