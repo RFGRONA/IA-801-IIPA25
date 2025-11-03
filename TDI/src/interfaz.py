@@ -94,7 +94,18 @@ class OpcionesDialog(tk.Toplevel):
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("MLP con Backpropagation - IIPA 2025"); self.geometry("1400x850")
+        self.title("MLP con Backpropagation - IIPA 2025")
+        ideal_width = 1400
+        ideal_height = 850
+        screen_width = self.winfo_screenwidth()
+        screen_height = self.winfo_screenheight()
+        safe_width = int(screen_width * 0.95)
+        safe_height = int(screen_height * 0.90)
+        final_width = min(ideal_width, safe_width)
+        final_height = min(ideal_height, safe_height)
+        pos_x = (screen_width // 2) - (final_width // 2)
+        pos_y = (screen_height // 2) - (final_height // 2)
+        self.geometry(f"{final_width}x{final_height}+{pos_x}+{pos_y}")
         self.protocol("WM_DELETE_WINDOW", self.cerrar_aplicacion)
         
         self.mlp_actual = None
