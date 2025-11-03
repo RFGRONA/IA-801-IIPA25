@@ -169,7 +169,7 @@ class App(tk.Tk):
         frame_cabecera.grid_columnconfigure(0, weight=1); frame_cabecera.grid_columnconfigure(1, weight=2); frame_cabecera.grid_columnconfigure(2, weight=1)
         label_escudo = ttk.Label(frame_cabecera)
         try:
-            ruta_escudo = resource_path("escudo.png")
+            ruta_escudo = resource_path("TDI\src\escudo.png")
             img_escudo = Image.open(ruta_escudo).resize((60, 80), Image.Resampling.LANCZOS)
             foto_escudo = ImageTk.PhotoImage(img_escudo); label_escudo.image = foto_escudo; label_escudo.config(image=foto_escudo)
         except Exception: label_escudo.config(text="[Escudo]")
@@ -179,26 +179,56 @@ class App(tk.Tk):
         ttk.Label(frame_cabecera, text=texto_info, justify="center", font=("Arial", 12)).grid(row=0, column=1)
         label_logo = ttk.Label(frame_cabecera)
         try:
-            ruta_logo = resource_path("logo.png")
+            ruta_logo = resource_path("TDI\src\logo.png")
             img_logo = Image.open(ruta_logo).resize((160, 80), Image.Resampling.LANCZOS)
             foto_logo = ImageTk.PhotoImage(img_logo); label_logo.image = foto_logo; label_logo.config(image=foto_logo)
         except Exception: label_logo.config(text="[Logo]")
         label_logo.grid(row=0, column=2, sticky="e")
         
     def crear_tab_entrenamiento(self):
-        frame_izquierdo = ttk.Frame(self.tab_entrenamiento, width=400); frame_izquierdo.pack(side="left", fill="y", padx=10, pady=10); frame_izquierdo.pack_propagate(False)
-        frame_graficas = ttk.Frame(self.tab_entrenamiento); frame_graficas.pack(side="left", expand=True, fill="both")
-        frame_config = ttk.LabelFrame(frame_izquierdo, text="Configuración del Modelo MLP"); frame_config.pack(fill="x", pady=5)
+    
+        # A. CONFIGURACIÓN DEL FRAME DE GRÁFICAS (DERECHA)
+        # Empaquetamos primero para que se pegue al lado y ocupe el espacio restante.
+        frame_graficas = ttk.Frame(self.tab_entrenamiento)
+        frame_graficas.pack(side="right", expand=True, fill="both") 
+            
+        # B. CONFIGURACIÓN DEL FRAME IZQUIERDO CON SCROLLBARS (CONTROLES)
+
+        # 1. Crear el contenedor intermedio para Canvas y Scrollbar
+        frame_controles_scroll = ttk.Frame(self.tab_entrenamiento)
+        # Empaquetamos frame_controles_scroll a la izquierda del frame_graficas.
+        frame_controles_scroll.pack(side="left", fill="y", padx=10, pady=10) 
+            
+        # 2. Crear y configurar Canvas y Scrollbar dentro del contenedor intermedio.
+        scrollbar_controles = ttk.Scrollbar(frame_controles_scroll, orient="vertical", command=None)
+        scrollbar_controles.pack(side="right", fill="y") # La barra va a la DERECHA del frame intermedio
+
+        canvas_controles = tk.Canvas(frame_controles_scroll, width=400, yscrollcommand=scrollbar_controles.set) 
+        canvas_controles.pack(side="left", fill="y") # El canvas va a la IZQUIERDA del frame intermedio
+            
+        # 3. Vincular comandos
+        scrollbar_controles.config(command=canvas_controles.yview)
+        canvas_controles.bind('<Configure>', lambda e: canvas_controles.configure(scrollregion = canvas_controles.bbox("all")))
+            
+        # 4. Crear el Frame deslizable que va dentro del Canvas
+        frame_izquierdo_scrollable = ttk.Frame(canvas_controles)
+        canvas_controles.create_window((0, 0), window=frame_izquierdo_scrollable, anchor="nw", width=380)
+            
+        frame_izquierdo = frame_izquierdo_scrollable
         
+        # --- 3. CONFIGURACIÓN DEL MODELO MLP (widgets omitidos por brevedad) ---
+        
+        frame_config = ttk.LabelFrame(frame_izquierdo, text="Configuración del Modelo MLP")
+        frame_config.pack(fill="x", pady=5, padx=5) 
+        
+        # Widgets de configuración
         ttk.Button(frame_config, text="Seleccionar Carpeta Dataset", command=lambda: self.ruta_dataset.set(filedialog.askdirectory(initialdir="."))).grid(row=0, column=0, padx=5, pady=5, sticky="ew")
         ttk.Label(frame_config, textvariable=self.ruta_dataset, wraplength=200).grid(row=0, column=1, columnspan=2, sticky="w")
-
         frame_targets = ttk.Frame(frame_config)
         frame_targets.grid(row=1, column=0, columnspan=3, sticky="ew")
         ttk.Button(frame_targets, text="Seleccionar Targets", command=lambda: self.ruta_targets.set(filedialog.askopenfilename(initialdir="."))).pack(side="left", padx=5, pady=5)
         ttk.Button(frame_targets, text="Editar Patrones", command=self.editar_patrones_salida).pack(side="left")
         ttk.Label(frame_targets, textvariable=self.ruta_targets, wraplength=150).pack(side="left", padx=5)
-
         ttk.Label(frame_config, text="Neuronas Capa Oculta:").grid(row=2, column=0, sticky="w", padx=5, pady=5)
         self.neuronas_ocultas_var = tk.IntVar(value=15); ttk.Entry(frame_config, textvariable=self.neuronas_ocultas_var, width=10).grid(row=2, column=1, sticky="w", padx=5)
         ttk.Label(frame_config, text="Tasa de Aprendizaje (\u03B1):").grid(row=3, column=0, sticky="w", padx=5, pady=5)
@@ -210,45 +240,47 @@ class App(tk.Tk):
         self.momentum_activado = tk.BooleanVar(value=True); self.momentum_var = tk.StringVar(value="0.9")
         ttk.Checkbutton(frame_config, text="Activar Momentum:", variable=self.momentum_activado).grid(row=6, column=0, sticky="w", padx=5, pady=5)
         ttk.Entry(frame_config, textvariable=self.momentum_var, width=10).grid(row=6, column=1, sticky="w", padx=5)
-
         ttk.Label(frame_config, text="Épocas por bloque:").grid(row=7, column=0, sticky="w", padx=5, pady=5)
         self.epocas_bloque_var = tk.IntVar(value=500)
         ttk.Entry(frame_config, textvariable=self.epocas_bloque_var, width=10).grid(row=7, column=1, sticky="w", padx=5)
-
         ttk.Label(frame_config, text="Activación Oculta:").grid(row=8, column=0, sticky="w", padx=5, pady=5)
         self.act_oculta_var = tk.StringVar(value="relu")
         ttk.Combobox(frame_config, textvariable=self.act_oculta_var, 
-                     values=["relu", "sigmoide"], width=10, state="readonly").grid(row=8, column=1, sticky="w", padx=5)
-        
+                    values=["relu", "sigmoide"], width=10, state="readonly").grid(row=8, column=1, sticky="w", padx=5)
         ttk.Label(frame_config, text="Activación Salida:").grid(row=9, column=0, sticky="w", padx=5, pady=5)
         self.act_salida_var = tk.StringVar(value="sigmoide")
         ttk.Combobox(frame_config, textvariable=self.act_salida_var, 
-                     values=["sigmoide", "relu"], width=10, state="readonly").grid(row=9, column=1, sticky="w", padx=5)
-
+                    values=["sigmoide", "relu"], width=10, state="readonly").grid(row=9, column=1, sticky="w", padx=5)
         ttk.Label(frame_config, text="División Dataset (% Entr.):").grid(row=10, column=0, sticky="w", padx=5, pady=5)
-        
         self.division_var = tk.IntVar(value=80)
         self.division_label_var = tk.StringVar(value=f"{self.division_var.get()}% / {100-self.division_var.get()}%")
-        
         frame_slider = ttk.Frame(frame_config)
-        frame_slider.grid(row=10, column=1, columnspan=2, sticky="ew") # <-- Fila 10
+        frame_slider.grid(row=10, column=1, columnspan=2, sticky="ew") 
         slider = ttk.Scale(frame_slider, from_=50, to=95, orient="horizontal", variable=self.division_var, command=lambda value: self.division_label_var.set(f"{int(float(value))}% / {100-int(float(value))}%"))
         slider.pack(side="left", expand=True, fill="x")
         ttk.Label(frame_slider, textvariable=self.division_label_var, width=10).pack(side="left")
 
-        self.btn_iniciar = ttk.Button(frame_izquierdo, text="Iniciar Entrenamiento", command=self.iniciar_entrenamiento_nuevo); self.btn_iniciar.pack(pady=10, fill="x")
-        self.btn_cancelar = ttk.Button(frame_izquierdo, text="Cancelar Entrenamiento", command=self.detener_entrenamiento, state="disabled"); self.btn_cancelar.pack(pady=5, fill="x")
+        # --- 4. BOTONES DE CONTROL Y CONSOLA ---
+        
+        self.btn_iniciar = ttk.Button(frame_izquierdo, text="Iniciar Entrenamiento", command=self.iniciar_entrenamiento_nuevo); self.btn_iniciar.pack(pady=10, fill="x", padx=5)
+        self.btn_cancelar = ttk.Button(frame_izquierdo, text="Cancelar Entrenamiento", command=self.detener_entrenamiento, state="disabled"); self.btn_cancelar.pack(pady=5, fill="x", padx=5)
         self.label_animacion = ttk.Label(frame_izquierdo, text="", font=("Arial", 10, "italic"))
         self.label_animacion.pack(pady=5)
         frame_consola = ttk.LabelFrame(frame_izquierdo, text="Consola de Entrenamiento")
-        frame_consola.pack(fill="both", expand=True, pady=10)
+        frame_consola.pack(fill="both", expand=True, pady=10, padx=5)
         self.log_consola = tk.Text(frame_consola, height=10, state="disabled")
         self.log_consola.pack(fill="both", expand=True, padx=5, pady=5)
 
+        # --- 5. INICIALIZACIÓN DE GRÁFICAS (TAMAÑO ORIGINAL) ---
+        
+        # Volvemos a la inicialización original de Matplotlib con el tamaño que tenías.
         self.fig, (self.ax1, self.ax2, self.ax3) = plt.subplots(3, 1, figsize=(9, 7), tight_layout=True)
-        self.canvas = FigureCanvasTkAgg(self.fig, master=frame_graficas); self.canvas.get_tk_widget().pack(fill="both", expand=True)
+        
+        self.canvas = FigureCanvasTkAgg(self.fig, master=frame_graficas)
+        self.canvas.get_tk_widget().pack(fill="both", expand=True)
+        
         self.limpiar_graficas()
-    
+
     def editar_patrones_salida(self):
         ruta_archivo = self.ruta_targets.get()
         if not ruta_archivo:
@@ -617,6 +649,7 @@ class App(tk.Tk):
             if (epoca % 25 == 0 or epoca == len(eje_x)) and self.historial_matrices:
                 indice_matriz = min( (epoca - 1) // 25, len(self.historial_matrices) - 1)
                 matriz = self.historial_matrices[indice_matriz]
+                # Asumiendo que X_val es el conjunto de validación
                 acc = np.trace(matriz) / len(self.X_val) if len(self.X_val) > 0 else 0
                 eje_x_prec.append(epoca)
                 precision_val.append(acc)
@@ -633,10 +666,10 @@ class App(tk.Tk):
             matriz_final = self._calcular_matriz_confusion_estatica(self.X_val, self.Y_val)
             self.dibujar_matriz_confusion_estatica(matriz_final, epoca_actual=len(self.historial_mse_train))
         
+        # Ajustar la vista y dibujar en el canvas
         self.ax1.relim(); self.ax1.autoscale_view(); self.ax1.legend()
         self.ax2.relim(); self.ax2.autoscale_view() 
         self.canvas.draw()
-
     def on_tab_changed(self, event):
         selected_tab_index = self.notebook.index(self.notebook.select())
         if selected_tab_index == 1:
@@ -653,7 +686,7 @@ class App(tk.Tk):
         frame_controles.pack(side="left", fill="y", padx=10, pady=10)
         frame_controles.pack_propagate(False)
         
-        self.btn_predecir_imagen = ttk.Button(frame_controles, text="Seleccionar y Predecir Imagen (.png)", command=self.predecir_imagen, state="disabled")
+        self.btn_predecir_imagen = ttk.Button(frame_controles, text="Seleccionar y Predecir Imagen ", command=self.predecir_imagen, state="disabled")
         self.btn_predecir_imagen.pack(pady=10, fill="x")
 
         self.btn_predecir_aleatoria = ttk.Button(frame_controles, text="Probar con Imagen Aleatoria", command=self.probar_imagen_aleatoria, state="disabled")
@@ -664,11 +697,11 @@ class App(tk.Tk):
         self.label_imagen_predecida = ttk.Label(frame_imagen, text="\nCargue una imagen\n", style="Card.TLabel", anchor="center")
         self.label_imagen_predecida.pack(pady=20, padx=20)
 
-        self.label_carpeta_seleccionada = ttk.Label(frame_controles, text="Carpeta", font=("Courier", 8))
+        self.label_carpeta_seleccionada = ttk.Label(frame_controles, text="Valor real: ", font=("Courier", 8))
         self.label_carpeta_seleccionada.pack(pady=20)
 
         self.label_prediccion_binaria = ttk.Label(frame_controles, text="Salida: [?]", font=("Courier", 8))
-        self.label_prediccion_binaria.pack(pady=20)
+        self.label_prediccion_binaria.pack(pady=10)
         
         frame_traduccion = ttk.LabelFrame(frame_controles, text="Predicción")
         frame_traduccion.pack(fill="x", pady=10)
@@ -712,15 +745,16 @@ class App(tk.Tk):
             messagebox.showwarning("Recursos no cargados", "Asegúrese de que el modelo y los targets estén cargados.")
             return
             
-        ruta = filedialog.askopenfilename(filetypes=[("All files", "*.*"), ("PNG files", "*.png"),])
+        ruta = filedialog.askopenfilename(filetypes=[("All files", "*.*"), ("PNG files", "*.png"), ("JPG files", "*.jpg")])
         if not ruta: return
-        
+        ruta_directorio = os.path.dirname(ruta)
+        nombre_carpeta = os.path.basename(ruta_directorio)
         try:
             img = Image.open(ruta)
             photo = self._crear_imagen_previsualizacion(img)
             self.label_imagen_predecida.config(image=photo)
             self.label_imagen_predecida.image = photo 
-            
+            self.label_carpeta_seleccionada.config(text=f"Valor real: {nombre_carpeta}")
             vector_entrada = convertir_imagen_individual(ruta)
             if len(vector_entrada) != self.mlp_uso.neuronas_entrada:
                 messagebox.showerror("Error", f"La imagen no tiene el tamaño correcto. Se esperaba un vector de {self.mlp_uso.neuronas_entrada} píxeles.")
@@ -783,7 +817,7 @@ class App(tk.Tk):
         # 3. Actualizar la etiqueta en la interfaz gráfica (debes crear esta etiqueta antes)
         # Asume que tienes una etiqueta llamada self.label_carpeta_seleccionada
         if hasattr(self, 'label_carpeta_seleccionada'):
-            self.label_carpeta_seleccionada.config(text=f"Carpeta: {nombre_carpeta}")
+            self.label_carpeta_seleccionada.config(text=f"Valor real: {nombre_carpeta}")
         # Ahora, el resto del código es idéntico al de predecir_imagen
         try:
             img = Image.open(ruta_aleatoria)
@@ -843,8 +877,25 @@ class App(tk.Tk):
         main_paned_window = ttk.PanedWindow(self.tab_preprocesamiento, orient="horizontal")
         main_paned_window.pack(fill="both", expand=True, padx=10, pady=10)
         
-        frame_controles = ttk.Frame(main_paned_window, width=450); frame_controles.pack_propagate(False)
-        main_paned_window.add(frame_controles, weight=1)
+        # 1. Crear el Canvas y el Scrollbar (se añaden al PanedWindow)
+        canvas_controles = tk.Canvas(main_paned_window, width=450)
+        main_paned_window.add(canvas_controles, weight=1)
+
+        scrollbar_controles = ttk.Scrollbar(canvas_controles, orient="vertical", command=canvas_controles.yview)
+        scrollbar_controles.pack(side="right", fill="y")
+        canvas_controles.configure(yscrollcommand=scrollbar_controles.set)
+
+        # 2. Crear el frame interior deslizable (Este es el NUEVO frame_controles)
+        # Todos los widgets irán dentro de este frame
+        frame_controles_scrollable = ttk.Frame(canvas_controles)
+        canvas_controles.create_window((0, 0), window=frame_controles_scrollable, anchor="nw", width=440) # 440 para dejar espacio al scrollbar
+
+        # 3. Vincular el scroll
+        frame_controles_scrollable.bind('<Configure>', 
+            lambda e: canvas_controles.configure(scrollregion = canvas_controles.bbox("all")))
+
+        # 4. Redefinir 'frame_controles' para que los widgets sigan funcionando
+        frame_controles = frame_controles_scrollable
 
         frame_carga = ttk.LabelFrame(frame_controles, text="A. Cargar Dataset Base")
         frame_carga.pack(fill="x", padx=10, pady=10)
