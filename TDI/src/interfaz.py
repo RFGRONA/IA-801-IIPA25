@@ -295,11 +295,36 @@ class App(tk.Tk):
         # --- 5. INICIALIZACIÓN DE GRÁFICAS (TAMAÑO ORIGINAL) ---
         
         # Volvemos a la inicialización original de Matplotlib con el tamaño que tenías.
-        self.fig, (self.ax1, self.ax2, self.ax3) = plt.subplots(3, 1, figsize=(9, 7), tight_layout=True)
+        # self.fig, (self.ax1, self.ax2, self.ax3) = plt.subplots(3, 1, figsize=(9, 15), tight_layout=True)
         
+        # self.canvas = FigureCanvasTkAgg(self.fig, master=frame_graficas)
+        # self.canvas.get_tk_widget().pack(fill="both", expand=True)
+        
+        # self.limpiar_graficas()
+
+        # 1. Definir los ratios de altura y espaciado
+        # La Matriz de Confusión (tercera fila) tendrá el doble o triple de altura.
+        # hspace es el espacio vertical entre las subgráficas (ajustado de 0.3 a 0.5)
+        gridspec_params = {
+            'height_ratios': [1, 1, 1.5], 
+            'hspace': 0.9                  # Espacio entre cada gráfica. Ajusta este valor si es necesario.
+        }
+
+        # 2. Crear la figura usando los parámetros de GridSpec
+        self.fig, (self.ax1, self.ax2, self.ax3) = plt.subplots(
+            nrows=3, ncols=1, 
+            figsize=(9, 9), # Puedes ajustar la altura total aquí
+            gridspec_kw=gridspec_params # Aplicamos los ratios y el hspace
+        )
+
+        # 3. Aplicar ajustes manuales finos si es necesario
+        # Ajustamos el margen inferior (bottom) para empujar toda la rejilla hacia arriba 
+        # y dejar espacio para las etiquetas del eje X de la tercera gráfica.
+        self.fig.subplots_adjust(bottom=0.08, top=0.95)
+
+        # 4. Enlazar al canvas
         self.canvas = FigureCanvasTkAgg(self.fig, master=frame_graficas)
         self.canvas.get_tk_widget().pack(fill="both", expand=True)
-        
         self.limpiar_graficas()
 
     def editar_patrones_salida(self):
@@ -634,23 +659,39 @@ class App(tk.Tk):
 
     def dibujar_matriz_confusion_estatica(self, matriz, epoca_actual=None):
         """Toma una matriz (pre-calculada) y la dibuja en el tercer eje (ax3)."""
+
         self.ax3.clear()
+        
         if epoca_actual:
-            self.ax3.set_title(f"Matriz de Confusión (Época {epoca_actual})")
+            self.ax3.set_title(f"Matriz de Confusión (Época {epoca_actual})", fontsize=10)
         else:
-            self.ax3.set_title("Matriz de Confusión (Validación)")
+            self.ax3.set_title("Matriz de Confusión (Validación)", fontsize=10)
         
         n_clases = len(self.nombres_clases)
         self.ax3.matshow(matriz, cmap=plt.cm.Blues, alpha=0.7)
+        
+        # --- AJUSTES PARA ANCHO Y ROTACIÓN ---
+        
+        # 1. Ajuste de límites para centrar la matriz (opcional, pero ayuda)
+        self.ax3.set_xlim(-0.5, n_clases - 0.5)
+        self.ax3.set_ylim(n_clases - 0.5, -0.5) # Asegura el orden correcto
+        
+        # 2. Configuración de ticks
         self.ax3.set_xticks(np.arange(n_clases))
         self.ax3.set_yticks(np.arange(n_clases))
-        self.ax3.set_xticklabels(self.nombres_clases)
-        self.ax3.set_yticklabels(self.nombres_clases)
+        
+        # 3. ROTACIÓN CRUCIAL: Rotamos las etiquetas del eje X 45 grados.
+        self.ax3.set_xticklabels(self.nombres_clases, rotation=70, ha='center', fontsize=6)
+        self.ax3.set_yticklabels(self.nombres_clases, fontsize=6) # Mantenemos Y horizontal
+
         
         # Escribe los números dentro de cada celda
         for i in range(matriz.shape[0]):
             for j in range(matriz.shape[1]):
-                self.ax3.text(x=j, y=i, s=int(matriz[i, j]), va='center', ha='center', size='large')
+                # Mantenemos size=6 (si tienes muchas clases, 6 es mejor)
+                self.ax3.text(x=j, y=i, s=int(matriz[i, j]), va='center', ha='center', size=6)
+                
+ 
     
     def dibujar_estado_final_graficas(self):
         if not self.historial_mse_train: return
