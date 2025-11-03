@@ -653,7 +653,10 @@ class App(tk.Tk):
         self.label_imagen_predecida = ttk.Label(frame_imagen, text="\nCargue una imagen\n", style="Card.TLabel", anchor="center")
         self.label_imagen_predecida.pack(pady=20, padx=20)
 
-        self.label_prediccion_binaria = ttk.Label(frame_controles, text="Salida: [?]", font=("Courier", 12))
+        self.label_carpeta_seleccionada = ttk.Label(frame_controles, text="Carpeta", font=("Courier", 8))
+        self.label_carpeta_seleccionada.pack(pady=20)
+
+        self.label_prediccion_binaria = ttk.Label(frame_controles, text="Salida: [?]", font=("Courier", 8))
         self.label_prediccion_binaria.pack(pady=20)
         
         frame_traduccion = ttk.LabelFrame(frame_controles, text="Predicción")
@@ -698,7 +701,7 @@ class App(tk.Tk):
             messagebox.showwarning("Recursos no cargados", "Asegúrese de que el modelo y los targets estén cargados.")
             return
             
-        ruta = filedialog.askopenfilename(filetypes=[("PNG files", "*.png"), ("All files", "*.*")])
+        ruta = filedialog.askopenfilename(filetypes=[("All files", "*.*"), ("PNG files", "*.png"),])
         if not ruta: return
         
         try:
@@ -763,7 +766,13 @@ class App(tk.Tk):
         # Escoge una ruta de imagen al azar
         ruta_aleatoria = random.choice(self.rutas_imagenes_totales)
         print(f"Probando con imagen aleatoria: {ruta_aleatoria}")
-
+        ruta_directorio = os.path.dirname(ruta_aleatoria)
+        nombre_carpeta = os.path.basename(ruta_directorio)
+        
+        # 3. Actualizar la etiqueta en la interfaz gráfica (debes crear esta etiqueta antes)
+        # Asume que tienes una etiqueta llamada self.label_carpeta_seleccionada
+        if hasattr(self, 'label_carpeta_seleccionada'):
+            self.label_carpeta_seleccionada.config(text=f"Carpeta: {nombre_carpeta}")
         # Ahora, el resto del código es idéntico al de predecir_imagen
         try:
             img = Image.open(ruta_aleatoria)
