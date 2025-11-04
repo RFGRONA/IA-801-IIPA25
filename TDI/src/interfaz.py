@@ -803,6 +803,7 @@ class App(tk.Tk):
                 self.btn_predecir_aleatoria.config(state="disabled")
 
     def predecir_imagen(self):
+        
         if not self.mlp_uso or not self.clases_info_uso:
             messagebox.showwarning("Recursos no cargados", "Asegúrese de que el modelo y los targets estén cargados.")
             return
@@ -811,24 +812,80 @@ class App(tk.Tk):
         if not ruta: return
         ruta_directorio = os.path.dirname(ruta)
         nombre_carpeta = os.path.basename(ruta_directorio)
+
+        # 1. Obtener configuración del pipeline (necesaria para cualquier reescalado/filtro)
+        settings = self._leer_pipeline_solo_uso()
+        if settings is None:
+            messagebox.showerror("Error de Configuración", "No se pudo leer la configuración de reescalado y filtros.")
+            return
+        
         try:
-            img = Image.open(ruta)
-            photo = self._crear_imagen_previsualizacion(img)
+            # Cargar la imagen original
+            img_original = Image.open(ruta)
+            w_img, h_img = img_original.size
+            
+            # Imagen que se usará para el pipeline
+            img_a_procesar = img_original.copy()
+            
+            # Flag para saber si aplicamos el pipeline general
+            debe_procesar_pipeline = False
+            
+            # 2. Normalizar Orientación y/o Activar Procesamiento
+            if (w_img == 1600 and h_img == 736):
+                # Caso 1: Imagen grande y orientada horizontalmente -> ROTAR
+                img_a_procesar = img_a_procesar.rotate(90, expand=True)
+                w_img, h_img = img_a_procesar.size # Ahora será 736x1600
+                debe_procesar_pipeline = True
+            
+            if (w_img == 736 and h_img == 1600):
+                # Caso 2: Imagen grande y ya orientada verticalmente
+                debe_procesar_pipeline = True
+                
+            # Caso 3: CUALQUIER OTRA IMAGEN -> Procesar pipeline completo (reescalado obligatorio)
+            if not debe_procesar_pipeline:
+                print(f"DEBUG: Imagen de tamaño {w_img}x{h_img} no estándar. Aplicando pipeline completo.")
+                debe_procesar_pipeline = True # Procesamos cualquier otra imagen
+            
+            
+            # 3. Aplicar Pipeline (Reescalado + Filtros)
+            if debe_procesar_pipeline:
+                # Aplicar el pipeline (reescalado a settings['escala'] y filtros). NO rotación.
+                img_procesada = self._aplicar_pipeline_a_imagen(
+                    img_a_procesar, # La imagen (original, rotada o cualquier otra)
+                    settings, 
+                    settings['kernels_list'],
+                    aplicar_rotacion=False
+                )
+                
+                # 4. Generar Vector de Entrada y Previsualización desde la Imagen Procesada
+                img_final_display = img_procesada
+                photo = self._crear_imagen_previsualizacion_uso(img_final_display) 
+                vector_entrada = np.array(img_final_display).flatten() / 255.0
+                
+            else:
+                # ESTE CASO SOLO DEBERÍA OCURRIR SI EL PIPELINE NO ESTÁ COMPLETO O HAY ERRORES. 
+                # Si el modelo está bien configurado, debería ejecutar debe_procesar_pipeline=True
+                # Para seguridad, si falla la detección, generamos el vector a partir de la ruta
+                img_final_display = img_original
+                photo = self._crear_imagen_previsualizacion(img_original) 
+                vector_entrada = convertir_imagen_individual(ruta)
+
+
+            # 5. Actualizar UI y Verificar Tamaño
             self.label_imagen_predecida.config(image=photo)
             self.label_imagen_predecida.image = photo 
             self.label_carpeta_seleccionada.config(text=f"Valor real: {nombre_carpeta}")
-            vector_entrada = convertir_imagen_individual(ruta)
+            
+            # Verificar tamaño del vector de entrada (Aquí es donde debe ser 2304)
             if len(vector_entrada) != self.mlp_uso.neuronas_entrada:
-                messagebox.showerror("Error", f"La imagen no tiene el tamaño correcto. Se esperaba un vector de {self.mlp_uso.neuronas_entrada} píxeles.")
+                messagebox.showerror("Error", f"La imagen procesada ({len(vector_entrada)} píxeles) no tiene el tamaño correcto. Se esperaba un vector de {self.mlp_uso.neuronas_entrada} píxeles (Revise su configuración de Reescalado en la pestaña de Preprocesamiento).")
                 return
             
-            # Usamos el método público .predecir(), que devuelve una lista de Python
+            # 6. Realizar la predicción
             salidas_finales = self.mlp_uso.predecir(vector_entrada) 
-            
-            # Ahora la siguiente línea funciona porque 'salidas_finales' es una lista normal
             self.label_prediccion_binaria.config(text=f"Salida: {[round(s, 2) for s in salidas_finales]}")
 
-            # El resto de la lógica no cambia
+            # 7. Traducir la predicción
             prediccion_vec = np.array(salidas_finales)
             target_vectors = list(self.clases_info_uso.values())
             nombres_clases = list(self.clases_info_uso.keys())
@@ -841,7 +898,7 @@ class App(tk.Tk):
 
         except Exception as e:
             messagebox.showerror("Error al Predecir", str(e))
-    
+
     def dibujar_red_uso(self, salidas_ocultas=None, salidas_finales=None):
         self.canvas_red.delete("all")
         if not self.mlp_uso: return
@@ -861,6 +918,7 @@ class App(tk.Tk):
                 y_h = y_step_h * (j + 1)
                 self.canvas_red.create_line(x_hidden, y_h, x_out, y_o, fill="gray")
                 self.canvas_red.create_text((x_hidden+x_out)/2, (y_h+y_o)/2, text=f"{self.mlp_uso.pesos_ho[k][j]:.1f}", font=("Arial", 7))
+
 
     def probar_imagen_aleatoria(self):
         """
@@ -1498,6 +1556,77 @@ class App(tk.Tk):
             return Image.fromarray(matriz_procesada, 'RGB')
         else:
             return Image.fromarray(matriz_procesada, 'L')
+
+    def _crear_imagen_previsualizacion_uso(self, pil_image):
+        """
+        Crea una imagen de previsualización para la pestaña de Uso. 
+        Se usa en la imagen YA PROCESADA (reescalada y filtrada).
+        Aplica zoom si la imagen procesada es pequeña.
+        """
+        # Requerirás importar Image y ImageTk de PIL
+        # from PIL import Image, ImageTk 
+        
+        img_copy = pil_image.copy()
+        w, h = img_copy.size
+        
+        # Tamaño máximo del contenedor
+        max_w, max_h = 300, 300 
+
+        if w < 100 and h < 100:
+            # Es la imagen procesada (ej. 48x48). Aplicamos zoom pixelado.
+            zoom = 3
+            # Asegúrate de que Image.Resampling.NEAREST está definido
+            img_copy = img_copy.resize((w * zoom, h * zoom), Image.Resampling.NEAREST) 
+        else:
+            # Si la imagen procesada es inesperadamente grande, la encogemos.
+            # Asegúrate de que Image.Resampling.LANCZOS está definido
+            img_copy.thumbnail((max_w, max_h), Image.Resampling.LANCZOS)
+
+        return ImageTk.PhotoImage(img_copy)
+
+    def _leer_pipeline_solo_uso(self):
+        """
+        Lee solo la configuración del pipeline (escala, modo color, padding, filtros)
+        necesaria para la pestaña de Uso.
+        """
+        settings = {}
+        
+        # 1. Leer Escala (esencial)
+        try:
+            w_str, h_str = self.var_escala.get().lower().split('x')
+            settings['escala'] = (int(w_str), int(h_str))
+            if settings['escala'][0] <= 0 or settings['escala'][1] <= 0:
+                raise ValueError("Dimensiones deben ser positivas")
+        except Exception:
+            # No mostramos error en la pestaña de Uso, solo devolvemos None si falla
+            # Asume que si falla, se usará una escala por defecto o se advertirá en la predicción.
+            print("Advertencia: Formato de reescalado inválido. Usando defecto (ej. 48x48)")
+            settings['escala'] = (48, 48) # Usar un valor por defecto seguro si la UI falla
+        
+        # 2. Leer Modos y Flags
+        settings['modo_color'] = self.var_color.get() if hasattr(self, 'var_color') else 'gris'
+        settings['usar_padding'] = self.var_padding.get() if hasattr(self, 'var_padding') else False
+
+        # 3. Leer Filtros
+        settings['kernels_list'] = [] # Guardaremos los kernels en una lista
+        if hasattr(self, 'filtro_listbox'):
+            selected_indices = self.filtro_listbox.curselection()
+            selected_filtros = [self.filtro_listbox.get(i) for i in selected_indices]
+            
+            for nombre_filtro in selected_filtros:
+                if nombre_filtro == "Manual":
+                    # Asumiendo que KERNELS es un diccionario global o un atributo
+                    try:
+                        kernel_list = [[float(var.get()) for var in row] for row in self.entries_filtro_manual_vars]
+                        settings['kernels_list'].append(np.array(kernel_list))
+                    except Exception:
+                        # Silenciamos el filtro manual si tiene error
+                        continue 
+                else:
+                    # Asegúrate de que KERNELS esté accesible (ej. importado o atributo de clase)
+                    settings['kernels_list'].append(KERNELS.get(nombre_filtro))
+        
+        return settings
 
     def _seleccionar_carpeta_base(self):
         """
