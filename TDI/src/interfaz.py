@@ -24,13 +24,14 @@ from kernels import KERNELS
 from procesador_datos import convolve_2d_manual
 
 def resource_path(relative_path):
-    """ Obtiene la ruta absoluta al recurso, funciona para desarrollo y para PyInstaller """
+    """ 
+    Obtiene la ruta absoluta al recurso, funciona para desarrollo
+    y para PyInstaller (one-dir y one-file).
+    """
     try:
-        # PyInstaller crea una carpeta temporal y almacena la ruta en _MEIPASS
         base_path = sys._MEIPASS
     except Exception:
-        # Si _MEIPASS no existe, estamos en modo de desarrollo normal
-        base_path = os.path.abspath(".")
+        base_path = os.path.abspath(os.path.dirname(__file__))
 
     return os.path.join(base_path, relative_path)
 
@@ -170,19 +171,30 @@ class App(tk.Tk):
         label_escudo = ttk.Label(frame_cabecera)
         try:
             ruta_escudo = resource_path("escudo.png")
+            print(f"DEBUG: Cargando escudo desde: {ruta_escudo}") 
+            
             img_escudo = Image.open(ruta_escudo).resize((60, 80), Image.Resampling.LANCZOS)
             foto_escudo = ImageTk.PhotoImage(img_escudo); label_escudo.image = foto_escudo; label_escudo.config(image=foto_escudo)
-        except Exception: label_escudo.config(text="[Escudo]")
+        except Exception as e:
+            print(f"ERROR al cargar escudo.png: {e}")
+            label_escudo.config(text="[Escudo NO Cargado]")
+            
         label_escudo.grid(row=0, column=0, sticky="w")
         texto_info = ("Inteligencia Artificial 801 - IIPA 2025\nIngeniería de Sistemas y Computación\n"
                       "Yohan Leon, Oscar Barbosa, Gabriel Martinez")
         ttk.Label(frame_cabecera, text=texto_info, justify="center", font=("Arial", 12)).grid(row=0, column=1)
         label_logo = ttk.Label(frame_cabecera)
+
         try:
             ruta_logo = resource_path("logo.png")
+            print(f"DEBUG: Cargando logo desde: {ruta_logo}")
+            
             img_logo = Image.open(ruta_logo).resize((160, 80), Image.Resampling.LANCZOS)
             foto_logo = ImageTk.PhotoImage(img_logo); label_logo.image = foto_logo; label_logo.config(image=foto_logo)
-        except Exception: label_logo.config(text="[Logo]")
+        except Exception as e:
+            print(f"ERROR al cargar logo.png: {e}")
+            label_logo.config(text="[Logo NO Cargado]")
+            
         label_logo.grid(row=0, column=2, sticky="e")
         
     def crear_tab_entrenamiento(self):
