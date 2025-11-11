@@ -137,10 +137,10 @@ def convolve_2d_manual(imagen_matriz, kernel, usar_padding=True):
     """
     Aplica una convolución 2D manual a una imagen (matriz NumPy).
     
-    Esta función implementa la lógica de la presentación [cite: 525-541]:
+    Esta función implementa la lógica de la presentación :
     - Maneja imágenes en escala de grises (2D) y a color (3D, Opción B).
-    - Implementa la opción de padding (Relleno)[cite: 534].
-    - Calcula la "Norma C" para normalización[cite: 532, 533, 540].
+    - Implementa la opción de padding (Relleno).
+    - Calcula la "Norma C" para normalización.
     - Aplica "Clamp" (np.clip) para mantener los valores en [0, 255].
     """
     
@@ -162,11 +162,11 @@ def convolve_2d_manual(imagen_matriz, kernel, usar_padding=True):
     k_h, k_w = kernel.shape
 
     # --- 3. Lógica de Normalización "C" ---
-    # Sumamos todos los pesos del kernel [cite: 532, 552]
+    # Sumamos todos los pesos del kernel 
     norma_c = np.sum(kernel)
     if norma_c == 0:
         # Evitamos la división por cero, como en filtros de detección
-        # de bordes [cite: 214]
+        # de bordes 
         norma_c = 1
 
     # --- 4. Lógica de Padding (Relleno) ---
@@ -175,7 +175,7 @@ def convolve_2d_manual(imagen_matriz, kernel, usar_padding=True):
     pad_w = k_w // 2
 
     if usar_padding:
-        # Creamos la "Matriz Aux" con ceros en los bordes [cite: 534]
+        # Creamos la "Matriz Aux" con ceros en los bordes 
         img_padded = np.pad(imagen_matriz, ((pad_h, pad_h), (pad_w, pad_w)), 
                             mode='constant', constant_values=0)
         # El tamaño de salida es el mismo que el de la entrada
@@ -186,11 +186,11 @@ def convolve_2d_manual(imagen_matriz, kernel, usar_padding=True):
         out_h = img_h - k_h + 1
         out_w = img_w - k_w + 1
 
-    # Creamos la matriz de resultado vacía ("Matriz R") [cite: 536]
+    # Creamos la matriz de resultado vacía ("Matriz R") 
     matriz_resultado = np.zeros((out_h, out_w), dtype=np.float64)
 
     # --- 5. Proceso de Convolución (Producto Matricial Deslizante) ---
-    # Este bucle implementa el diagrama de flujo [cite: 577-591]
+    # Este bucle implementa el diagrama de flujo 
     
     # Iteramos sobre cada píxel (y, x) de la matriz de *salida*
     for y in range(out_h):
@@ -202,10 +202,10 @@ def convolve_2d_manual(imagen_matriz, kernel, usar_padding=True):
             roi = img_padded[y : y + k_h, x : x + k_w]
             
             # Aplicamos el producto elemento a elemento y sumamos
-            # R(M+1, N+1) = ... + IM_COZ(J+M, I+N) * C(J, I) [cite: 579]
+            # R(M+1, N+1) = ... + IM_COZ(J+M, I+N) * C(J, I) 
             k_sum = np.sum(roi * kernel)
             
-            # Aplicamos la norma "C" [cite: 540, 555]
+            # Aplicamos la norma "C" 
             matriz_resultado[y, x] = k_sum / norma_c
 
     # --- 6. Lógica de "Clampeo" (ReLU/Recorte) ---
